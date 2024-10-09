@@ -3949,59 +3949,62 @@ class Circulation(BaseModelClass):
         # initialize the base model class setting all the general properties of the model which all models have in common
         super().__init__(model_ref, name)
 
+        # -----------------------------------------------
         # independent properties
-        self.syst_art_res_factor: float = 1.0
-        self.syst_ven_res_factor: float = 1.0
-        self.syst_art_el_factor: float = 1.0
-        self.syst_ven_el_factor: float = 1.0
-        self.syst_art_u_vol_factor: float = 1.0
-        self.syst_ven_u_vol_factor: float = 1.0
+        self.syst_art_res_factor: float = 1.0           # systemic arteries resistance factor
+        self.syst_ven_res_factor: float = 1.0           # systemic veins resistance factor
+        self.syst_art_el_factor: float = 1.0            # systemic arteries elastance factor
+        self.syst_ven_el_factor: float = 1.0            # systemic veins elastance factor
+        self.syst_art_u_vol_factor: float = 1.0         # systemic arteries unstressed volume factor
+        self.syst_ven_u_vol_factor: float = 1.0         # systemic veins unstressed volume factor
 
-        self.pulm_art_res_factor: float = 1.0
-        self.pulm_ven_res_factor: float = 1.0
-        self.pulm_art_el_factor: float = 1.0
-        self.pulm_ven_el_factor: float = 1.0
-        self.pulm_art_u_vol_factor: float = 1.0
-        self.pulm_ven_u_vol_factor: float = 1.0
+        self.pulm_art_res_factor: float = 1.0           # pulmonary arteries resistance factor
+        self.pulm_ven_res_factor: float = 1.0           # pulmonary veins resistance factor
+        self.pulm_art_el_factor: float = 1.0            # pulmonary arteries elastance factor
+        self.pulm_ven_el_factor: float = 1.0            # pulmonary veins elastance factor
+        self.pulm_art_u_vol_factor: float = 1.0         # pulmonary arteries unstressed volume factor
+        self.pulm_ven_u_vol_factor: float = 1.0         # pulmonary veins unstressed volume factor
 
-        self.syst_art_res_ans_factor: float = 1.0
-        self.syst_ven_res_ans_factor: float = 1.0
-        self.syst_art_el_ans_factor: float = 1.0
-        self.syst_ven_el_ans_factor: float = 1.0
-        self.syst_art_u_vol_ans_factor: float = 1.0
-        self.syst_ven_u_vol_ans_factor: float = 1.0
+        self.syst_art_res_ans_factor: float = 1.0       # systemic arteries resistance ans factor
+        self.syst_ven_res_ans_factor: float = 1.0       # systemic veins resistance ans factor
+        self.syst_art_el_ans_factor: float = 1.0        # systemic arteries elastance ans factor
+        self.syst_ven_el_ans_factor: float = 1.0        # systemic veins elastance ans factor
+        self.syst_art_u_vol_ans_factor: float = 1.0     # systemic arteries unstressed volume ans factor
+        self.syst_ven_u_vol_ans_factor: float = 1.0     # systemic veins unstressed volume ans factor
 
-        self.pulm_art_res_ans_factor: float = 1.0
-        self.pulm_ven_res_ans_factor: float = 1.0
-        self.pulm_art_el_ans_factor: float = 1.0
-        self.pulm_ven_el_ans_factor: float = 1.0
-        self.pulm_art_u_vol_ans_factor: float = 1.0
-        self.pulm_ven_u_vol_ans_factor: float = 1.0
+        self.pulm_art_res_ans_factor: float = 1.0       # pulmonary arteries resistance ans factor
+        self.pulm_ven_res_ans_factor: float = 1.0       # pulmonary veins resistance ans factor
+        self.pulm_art_el_ans_factor: float = 1.0        # pulmonary arteries elastance ans factor
+        self.pulm_ven_el_ans_factor: float = 1.0        # pulmonary veins elastance ans factor
+        self.pulm_art_u_vol_ans_factor: float = 1.0     # pulmonary arteries unstressed volume ans factor
+        self.pulm_ven_u_vol_ans_factor: float = 1.0     # pulmonary veins unstressed volume ans factor
 
-        self.pulm_arteries: list = []
-        self.pulm_veins: list = []
-        self.pulm_art_resistors: list = []
-        self.pulm_ven_resistors: list = []
-        self.syst_arteries: list = []
-        self.syst_art_resistors: list = []
-        self.syst_veins: list = []
-        self.syst_ven_resistors: list = []
+        self.pulm_arteries: list = []                   # names of the pulmonary arteries
+        self.pulm_veins: list = []                      # names of the pulmonary veins
+        self.pulm_art_resistors: list = []              # names of the pulmonary arterial resistors
+        self.pulm_ven_resistors: list = []              # names of the pulmonary venous resistors
+        self.syst_arteries: list = []                   # names of the systemic arteries
+        self.syst_art_resistors: list = []              # names of the systemic arterial resistors
+        self.syst_veins: list = []                      # names of the systemic veins
+        self.syst_ven_resistors: list = []              # names of the systemic venous resistors
 
+        # -----------------------------------------------
         # dependent properties
-        self.total_blood_volume: float = 0.0
+        self.total_blood_volume: float = 0.0            # holds the current total blood volume
 
+        # -----------------------------------------------
         # local properties
-        self._pulm_arteries: list = []
-        self._pulm_veins: list = []
-        self._pulm_art_resistors: list = []
-        self._pulm_ven_resistors: list = []
-        self._syst_arteries: list = []
-        self._syst_art_resistors: list = []
-        self._syst_veins: list = []
-        self._syst_ven_resistors: list = []
+        self._pulm_arteries: list = []                  # references to the pulmonary arteries
+        self._pulm_veins: list = []                     # references to the pulmonary veins
+        self._pulm_art_resistors: list = []             # references to the pulmonary arterial resistors
+        self._pulm_ven_resistors: list = []             # references to the pulmonary venous resistors
+        self._syst_arteries: list = []                  # references to the systemic arteries
+        self._syst_art_resistors: list = []             # references to the systemic arterial resistors
+        self._syst_veins: list = []                     # references to the systemic veins
+        self._syst_ven_resistors: list = []             # references to the systemic venous resistors
         self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
-        self._update_interval: float = 0.015
-        self._update_counter: float = 0.0
+        self._update_interval: float = 0.015            # update interval (s)
+        self._update_counter: float = 0.0               # update interval counter (s)
 
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
@@ -4037,14 +4040,12 @@ class Circulation(BaseModelClass):
         # flag that the model is initialized
         self._is_initialized = True
 
-    def calc_model(self):
+    def calc_model(self) -> None:
         self._update_counter += self._t
         if self._update_counter > self._update_interval:
             self._update_counter = 0.0
 
             # update the ans factors, as they are continuously set we need to update them
-
-            # systemic vascular resistance (both elastance and resistance will change due to vasoconstriction or vasodilatation)
             for t in self._syst_arteries:
                 t.el_base_ans_factor = self.syst_art_el_ans_factor
                 t.u_vol_ans_factor = self.syst_art_u_vol_ans_factor
@@ -4059,7 +4060,6 @@ class Circulation(BaseModelClass):
             for t in self._syst_ven_resistors:
                 t.r_ans_factor = self.syst_ven_res_ans_factor
 
-            # pulmonary vascular resistance (both elastance and resistance will change due to vasoconstriction or vasodilatation)
             for t in self._pulm_arteries:
                 t.el_base_ans_factor = self.pulm_art_el_ans_factor
                 t.u_vol_ans_factor = self.pulm_art_u_vol_ans_factor
@@ -4074,73 +4074,73 @@ class Circulation(BaseModelClass):
             for t in self._pulm_ven_resistors:
                 t.r_ans_factor = self.pulm_ven_res_ans_factor
 
-    def change_pulm_art_elastance(self, change):
+    def change_pulm_art_elastance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_el_factor = change
             for t in self._pulm_arteries:
                     t.el_base_ans_factor = self.pulm_art_el_factor
     
-    def change_pulm_art_u_vol(self, change):
+    def change_pulm_art_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_u_vol_factor = change
             for t in self._pulm_arteries:
                     t.r_ans_factor = self.pulm_art_u_vol_factor
 
-    def change_pulm_art_resistance(self, change):
+    def change_pulm_art_resistance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_res_factor = change
             for t in self._pulm_art_resistors:
                     t.r_factor = self.pulm_art_res_factor
              
-    def change_pulm_ven_elastance(self, change):
+    def change_pulm_ven_elastance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_el_factor = change
             for t in self._pulm_veneries:
                     t.el_base_ans_factor = self.pulm_ven_el_factor
     
-    def change_pulm_ven_u_vol(self, change):
+    def change_pulm_ven_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_u_vol_factor = change
             for t in self._pulm_veneries:
                     t.r_ans_factor = self.pulm_ven_u_vol_factor
 
-    def change_pulm_ven_resistance(self, change):
+    def change_pulm_ven_resistance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_res_factor = change
             for t in self._pulm_ven_resistors:
                     t.r_factor = self.pulm_ven_res_factor
     
-    def change_syst_art_elastance(self, change):
+    def change_syst_art_elastance(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_el_factor = change
             for t in self._syst_arteries:
                     t.el_base_ans_factor = self.syst_art_el_factor
     
-    def change_syst_art_u_vol(self, change):
+    def change_syst_art_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_u_vol_factor = change
             for t in self._syst_arteries:
                     t.r_ans_factor = self.syst_art_u_vol_factor
 
-    def change_syst_art_resistance(self, change):
+    def change_syst_art_resistance(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_res_factor = change
             for t in self._syst_art_resistors:
                     t.r_factor = self.syst_art_res_factor
              
-    def change_syst_ven_elastance(self, change):
+    def change_syst_ven_elastance(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_el_factor = change
             for t in self._syst_veneries:
                     t.el_base_ans_factor = self.syst_ven_el_factor
     
-    def change_syst_ven_u_vol(self, change):
+    def change_syst_ven_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_u_vol_factor = change
             for t in self._syst_veneries:
                     t.r_ans_factor = self.syst_ven_u_vol_factor
 
-    def change_syst_ven_resistance(self, change):
+    def change_syst_ven_resistance(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_res_factor = change
             for t in self._syst_ven_resistors:
@@ -4189,37 +4189,42 @@ class Respiration(BaseModelClass):
         # initialize the base model class setting all the general properties of the model which all models have in common
         super().__init__(model_ref, name)
 
+        # -----------------------------------------------
         # initialize independent properties
-        self.dif_o2_factor: float = 1.0
-        self.dif_co2_factor: float = 1.0
-        self.dead_space_u_vol_factor: float = 1.0
-        self.lung_el_factor: float = 1.0
-        self.chestwall_el_factor: float = 1.0
-        self.thorax_el_factor: float = 1.0
-        self.upper_aw_res_factor: float = 1.0
-        self.lower_aw_res_factor: float = 1.0
-        self.lung_shunt_res_factor: float = 1.0
+        self.dif_o2_factor: float = 1.0                 # o2 diffusion constant factor
+        self.dif_co2_factor: float = 1.0                # co2 diffusion constant factor
+        self.dead_space_u_vol_factor: float = 1.0       # dead space unstressed volume factor
+        self.lung_el_factor: float = 1.0                # lungs elastance factor
+        self.chestwall_el_factor: float = 1.0           # chestwall elastance factor
+        self.thorax_el_factor: float = 1.0              # thorax elastance factor
+        self.upper_aw_res_factor: float = 1.0           # upper airway resistance factor
+        self.lower_aw_res_factor: float = 1.0           # lower airway resistance factor
+        self.lung_shunt_res_factor: float = 1.0         # lung shunt resistance factor
 
-        self.upper_airways: list = []
-        self.dead_space: list = []
-        self.thorax: list = []
-        self.chestwall: list = []
-        self.alveolar_spaces: list = []
-        self.lower_airways: list = []
-        self.gas_exchangers: list = []
-        self.lung_shunts: list = []
+        self.upper_airways: list = []                   # names of the upper airways
+        self.dead_space: list = []                      # names of the dead spaces
+        self.thorax: list = []                          # names of the thorax
+        self.chestwall: list = []                       # names of the chestwalls
+        self.alveolar_spaces: list = []                 # names of the alveolar spaces
+        self.lower_airways: list = []                   # names of the lower airways
+        self.gas_exchangers: list = []                  # names of the pulmonary gasexchangers
+        self.lung_shunts: list = []                     # names of the lungshunts
 
+        # -----------------------------------------------
+        # initialize dependent properties
+
+        # -----------------------------------------------
         # local properties
-        self._upper_airways: list = []
-        self._dead_space: list = []
-        self._thorax: list = []
-        self._chestwall: list = []
-        self._alveolar_spaces: list = []
-        self._lower_airways: list = []
-        self._gas_exchangers: list = []
-        self._lung_shunts: list = []
-        self._update_interval: float = 0.015
-        self._update_counter: float = 0.0
+        self._upper_airways: list = []                  # references to the upper airways
+        self._dead_space: list = []                     # references to the dead space
+        self._thorax: list = []                         # references to the thorax
+        self._chestwall: list = []                      # references to the chestwall
+        self._alveolar_spaces: list = []                # references to the alveolar spaces
+        self._lower_airways: list = []                  # references to the lower airways
+        self._gas_exchangers: list = []                 # references to the gasexchangers
+        self._lung_shunts: list = []                    # references to the lungshunts
+        self._update_interval: float = 0.015            # update interval (s)
+        self._update_counter: float = 0.0               # update interval counter (s)
 
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
@@ -4247,52 +4252,52 @@ class Respiration(BaseModelClass):
         # flag that the model is initialized
         self._is_initialized = True
 
-    def calc_model(self):
+    def calc_model(self) -> None:
         pass
 
-    def change_intrapulmonary_shunting(self, change):
+    def change_intrapulmonary_shunting(self, change: float) -> None:
         if change > 0.0:
             self.lung_shunt_res_factor = change
             for t in self._lung_shunts:
                 t.r_factor = self.lung_shunt_res_factor
 
-    def change_dead_space(self, change):
+    def change_dead_space(self, change: float) -> None:
         if change > 0.0:
             self.dead_space_u_vol_factor = change
             for t in self._dead_space:
                 t.u_vol_factor = self.dead_space_u_vol_factor
     
-    def change_upper_airway_resistance(self, change):
+    def change_upper_airway_resistance(self, change: float) -> None:
         if change > 0.0:
             self.upper_aw_res_factor = change
             for t in self._upper_airways:
                 t.r_factor = self.upper_aw_res_factor
 
-    def change_lower_airway_resistance(self, change):
+    def change_lower_airway_resistance(self, change: float) -> None:
         if change > 0.0:
             self.lower_aw_res_factor = change
             for t in self._lower_airways:
                 t.r_factor = self.lower_aw_res_factor
 
-    def change_thoracic_elastance(self, change):
+    def change_thoracic_elastance(self, change: float) -> None:
         if change > 0.0:
             self.thorax_el_factor = change
             for t in self._thorax:
                 t.el_base_factor = self.thorax_el_factor
 
-    def change_lung_elastance(self, change):
+    def change_lung_elastance(self, change: float) -> None:
         if change > 0.0:
             self.lung_el_factor = change
             for t in self._alveolar_spaces:
                 t.el_base_factor = self.lung_el_factor
 
-    def change_chestwall_elastance(self, change):
+    def change_chestwall_elastance(self, change: float) -> None:
         if change > 0.0:
             self.chestwall_el_factor = change
             for t in self._chestwall:
                 t.el_base_factor = self.chestwall_el_factor
 
-    def change_diffusion_capacity(self, change):
+    def change_diffusion_capacity(self, change: float) -> None:
          if change > 0.0:
             self.dif_o2_change = change
             self.dif_co2_change = change
@@ -4309,57 +4314,60 @@ class Shunts(BaseModelClass):
         # initialize the base model class setting all the general properties of the model which all models have in common
         super().__init__(model_ref, name)
 
+        # -----------------------------------------------
         # initialize independent properties
-        self.fo_enabled: bool = False
-        self.fo_diameter: float = 0.0
-        self.fo_length: float = 2.0
-        self.fo_backflow_factor: float = 1.0
-        self.fo_r_k: float = 1.0
+        self.fo_enabled: bool = False                   # boolean determining whether the foramen ovale is enabled or not
+        self.fo_diameter: float = 0.0                   # diameter of the foramen ovale (mm)
+        self.fo_length: float = 2.0                     # thickness of the foramen ovale (mm)
+        self.fo_backflow_factor: float = 1.0            # backflow resistance factor of the foramen ovale
+        self.fo_r_k: float = 1.0                        # non linear resistance of the foramen ovale
 
-        self.vsd_enabled: bool = False
-        self.vsd_diameter: float = 0.0
-        self.vsd_length: float = 2.0
-        self.vsd_backflow_factor: float = 1.0
-        self.vsd_r_k: float = 1.0
+        self.vsd_enabled: bool = False                  # boolean determining whether the ventricular septal defect is enabled or not
+        self.vsd_diameter: float = 0.0                  # diameter of the ventricular septal defect (mm)       
+        self.vsd_length: float = 2.0                    # thickness of the ventricular septal defect (mm)
+        self.vsd_backflow_factor: float = 1.0           # backflow resistance factor of the ventricular septal defect
+        self.vsd_r_k: float = 1.0                       # non linear resistance of the ventricular septal defect
 
-        self.da_enabled: bool = False
-        self.da_el: float = 5000.0
-        self.da_diameter: float = 0.0
-        self.da_length: float = 10.0
-        self.da_backflow_factor: float = 1.0
-        self.da_r_k: float = 1.0
+        self.da_enabled: bool = False                   # boolean determining whether the ductus arteriosus is enabled or not
+        self.da_el: float = 5000.0                      # elastance of the ductus arteriosus (mmHg / L)
+        self.da_diameter: float = 0.0                   # diameter of the ductus arteriosus (mm)
+        self.da_length: float = 10.0                    # length of the ductus arteriosus (mm)
+        self.da_backflow_factor: float = 1.0            # backflow resistance factor of the ductus arteriosus
+        self.da_r_k: float = 1.0                        # non linear resistance of the ductus arteriosus
 
-        self.da: str = ""
-        self.da_in: str = ""
-        self.da_out: str = ""
-        self.fo: str = ""
-        self.vsd: str = ""
+        self.da: str = ""                               # name of the ductus arteriosus blood capacitance model
+        self.da_in: str = ""                            # name of the ductus arteriosus inflow blood resistor 
+        self.da_out: str = ""                           # name of the ductus arteriosus outflow blood resistor 
+        self.fo: str = ""                               # name of the foramen ovale blood resistor 
+        self.vsd: str = ""                              # name of the ventricular septal defect blood resistor 
 
+        # -----------------------------------------------
         # initialize dependent properties
-        self.da_r_for: float = 1000.0
-        self.da_r_back: float = 1000.0
-        self.da_flow: float = 0.0
-        self.da_velocity: float = 0.0
-        self.fo_r_for: float = 1000.0
-        self.fo_r_back: float = 1000.0
-        self.fo_flow: float = 0.0
-        self.fo_velocity: float = 0.0
-        self.vsd_r_for: float = 1000.0
-        self.vsd_r_back: float = 1000.0
-        self.vsd_flow: float = 0.0
-        self.vsd_velocity: float = 0.0
+        self.da_r_for: float = 1000.0                   # calculated forward resistance across the ductus arteriosus (mmHg * s / L)
+        self.da_r_back: float = 1000.0                  # calculated backward resistance across the ductus arteriosus (mmHg * s / L)
+        self.da_flow: float = 0.0                       # flow across the ductus arteriosus (L/min)
+        self.da_velocity: float = 0.0                   # velocity of the flow across the ductus arteriosus (m/s)
+        self.fo_r_for: float = 1000.0                   # calculated forward resistance across the foramen ovale (mmHg * s / L)
+        self.fo_r_back: float = 1000.0                  # calculated forward resistance across the foramen ovale (mmHg * s / L)
+        self.fo_flow: float = 0.0                       # flow across the foramen ovale (L/min)
+        self.fo_velocity: float = 0.0                   # velocity of the flow across the foramen ovale (m/s)
+        self.vsd_r_for: float = 1000.0                  # calculated forward resistance across the ventricular septal defect (mmHg * s / L)
+        self.vsd_r_back: float = 1000.0                 # calculated forward resistance across the ventricular septal defect (mmHg * s / L)
+        self.vsd_flow: float = 0.0                      # flow across the ventricular septal defect (L/min)
+        self.vsd_velocity: float = 0.0                  # velocity of the flow across the ventricular septal defect (m/s)
 
+        # -----------------------------------------------
         # local properties
-        self._update_interval = 0.015
-        self._update_counter = 0.0
-        self._da = None
-        self._da_in = None
-        self._da_out = None
-        self._fo = None
-        self._vsd = None
-        self._da_area: float = 0.0
-        self._fo_area: float = 0.0
-        self._vsd_area: float = 0.0
+        self._update_interval = 0.015                   # update interval (s)
+        self._update_counter = 0.0                      # update interval counter (s)
+        self._da = None                                 # reference to the ductus arteriosus blood capacitance
+        self._da_in = None                              # reference to the ductus arteriosus inflow resistance
+        self._da_out = None                             # reference to the ductus arteriosus outflow resistance
+        self._fo = None                                 # reference to the foramen ovale blood resistor
+        self._vsd = None                                # reference to the ventricular septal defect resistor
+        self._da_area: float = 0.0                      # area of the ductus arteriosus (m^2)
+        self._fo_area: float = 0.0                      # area of the foramen ovale (m^2)
+        self._vsd_area: float = 0.0                     # area of the ventricular septal defect (m^2)
         
 
     def init_model(self, **args: dict[str, any]) -> None:
