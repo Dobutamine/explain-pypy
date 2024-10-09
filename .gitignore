@@ -1,0 +1,6 @@
+# Ignore Python cache directories
+__pycache__/
+
+# ignore all notebooks except the tutorial
+*.ipynb
+!tutorial.ipynb
