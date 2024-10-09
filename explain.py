@@ -6538,8 +6538,8 @@ baseline_term_neonate = {
             "description": "ans effector pathway on heartrate",
             "is_enabled": True,
             "target": "Heart.hr_ans_factor",
-            "mxe_high": 0.428,
-            "mxe_low": 1.5,
+            "effect_at_max_firing_rate": 0.428,
+            "effect_at_min_firing_rate": 1.5,
             "tc": 2
         },
         "EF_MV": {
