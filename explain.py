@@ -4357,6 +4357,10 @@ class Shunts(BaseModelClass):
         self._da_out = None
         self._fo = None
         self._vsd = None
+        self._da_area: float = 0.0
+        self._fo_area: float = 0.0
+        self._vsd_area: float = 0.0
+        
 
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
@@ -4384,17 +4388,32 @@ class Shunts(BaseModelClass):
 
         self._update_counter += self._t
 
+        # store the flows and velocities
+        self.da_flow = self._da_out.flow * 60.0
+        self.fo_flow = self._fo.flow * 60.0
+        self.vsd_flow = self._vsd.flow * 60.0
+
+        # calculate the velocity = flow_rate (in m^3/s) / (pi * radius^2) in m/s
+        if self._da_area > 0:
+            self.da_velocity = ((self.da_flow * 0.001) / self._da_area) * 1.4
+        if self._fo_area > 0:
+            self.fo_velocity = ((self.fo_flow * 0.001) / self._fo_area) * 1.4
+        if self._vsd_area > 0:
+            self.vsd_velocity = ((self.vsd_flow * 0.001) / self._vsd_area) * 1.4
+
     def set_ductus_arteriosus_properties(self, new_diameter: float, new_length: float) -> None:
-        if new_diameter > 0.0:
+        if new_diameter and self.da_enabled > 0.0:
             self.da_diameter = new_diameter
             self.da_length = new_length
+            self._da_area = math.pow((self.da_diameter * 0.001) / 2.0, 2.0) * math.pi # in m^2
             self.da_r_for = self.calc_resistance(self.da_diameter, self.da_length)
             self.da_r_back = self.da_r_for * self.da_backflow_factor
+            self._da_out.r_for = self.da_r_for
+            self._da_out.r_back = self.da_r_back
             self._da.el_base = self.da_el
             self._da.is_enabled = True
             self._da_in.is_enabled = True
             self._da_out.is_enabled = True
-
             self._da_in.no_flow = False
             self._da_out.no_flow = False
         else:
@@ -4403,9 +4422,10 @@ class Shunts(BaseModelClass):
             self._da_in.no_flow = True
 
     def set_foramen_ovale_properties(self, new_diameter: float, new_length: float) -> None:
-        if new_diameter > 0.0:
+        if new_diameter and self.fo_enabled > 0.0:
             self.fo_diameter = new_diameter
             self.fo_length = new_length
+            self._fo_area = math.pow((self.fo_diameter * 0.001) / 2.0, 2.0) * math.pi # in m^2
             self.fo_r_for = self.calc_resistance(self.fo_diameter, self.fo_length)
             self.fo_r_back = self.fo_r_for * self.fo_backflow_factor
             self._fo.is_enabled = True
@@ -4415,9 +4435,10 @@ class Shunts(BaseModelClass):
             self._fo.no_flow = True
 
     def set_ventricular_septal_defect_properties(self, new_diameter: float, new_length: float) -> None:
-        if new_diameter > 0.0:
+        if new_diameter and self.vsd_enabled > 0.0:
             self.vsd_diameter = new_diameter
             self.vsd_length = new_length
+            self._vsd_area = math.pow((self.vsd_diameter * 0.001) / 2.0, 2.0) * math.pi # in m^2
             self.vsd_r_for = self.calc_resistance(self.vsd_diameter, self.vsd_length)
             self.vsd_r_back = self.fo_r_for * self.vsd_backflow_factor
             self._vsd.is_enabled = True
@@ -4440,10 +4461,10 @@ class Shunts(BaseModelClass):
             # calculate radius in meters
             radius_meters = diameter / 2 / 1000.0
 
-            # calculate the resistance    Pa *  / m3
+            # calculate the resistance    Pa * s / m3
             res = (8.0 * n_pas * length_meters) / (math.pi * math.pow(radius_meters, 4))
 
-            # convert resistance of Pa/m3 to mmHg/l
+            # convert resistance of Pa * s / m3 to mmHg * s/l
             res = res * 0.00000750062
             return res
         else:
@@ -6952,6 +6973,7 @@ baseline_term_neonate = {
             "description": "shunts methods",
             "is_enabled": True,
             "da": "DA",
+            "da_enabled": True,
             "da_in": "DA_IN",
             "da_out": "DA_OUT",
             "da_el": 23000.0,
@@ -6960,10 +6982,10 @@ baseline_term_neonate = {
             "da_backflow_factor": 1.0,
             "da_r_k": 1.0,
             "fo": "FO",
-            "fo_enabled": False,
+            "fo_enabled": True,
             "fo_diameter": 0.0,
             "fo_length": 2.0,
-            "fo_backflow_factor": 1.0,
+            "fo_backflow_factor": 10.0,
             "fo_r_k": 1.0,
             "vsd": "VSD",
             "vsd_enabled": False,
