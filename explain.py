@@ -5019,9 +5019,13 @@ class TaskScheduler():
             p = getattr(task["model"], task["prop1"])
             p[task["prop2"]] = task["current_value"]
 
-# not implemented yet
+# WORK IN PROGRESS
 class Scaler():
-    pass
+    def __init__(self, model_ref: object) -> None:
+        self._model_engine: object = model_ref          # object holding a reference to the model engine
+        self._t: float = model_ref.modeling_stepsize    # setting the modeling stepsize
+        self._is_initialized: bool = False              # flag whether the model is initialized or not
+        self.is_enabled: bool = True                    # flag that the scaler is enabled
 
 class Plotter():
     def __init__(self) -> None:
@@ -5248,13 +5252,16 @@ class ModelEngine():
         self.model_time_total: float = 0.0
 
         # define an object holding the  datacollector
-        self._datacollector: dict = {}
+        self._datacollector: object = None
 
         # define an object holding the task scheduler
-        self._task_scheduler: dict = {}
+        self._task_scheduler: object = None
 
         # define an object holding the data plotter
-        self._plotter: dict = {}
+        self._plotter: object = None
+
+        # define an object holding the model scaler
+        self._scaler: object = None
 
         # define local attributes
         self.initialized: bool = False
@@ -5270,8 +5277,9 @@ class ModelEngine():
         # make sure the objects are empty
         self.models: dict = {}
         self.model_data: list = []
-        self._datacollector: dict = {}
-        self._task_scheduler: dict = {}
+        self._datacollector: object = None
+        self._task_scheduler: object = None
+        self._scaler: object = None
         self.initialized = False
 
         # store the model definition in the model engine class
@@ -5312,6 +5320,7 @@ class ModelEngine():
         self._datacollector = Datacollector(self)
         self._task_scheduler = TaskScheduler(self)
         self._plotter = Plotter()
+        self._scaler = Scaler(self)
 
         # initialize all the submodels if there are no errors
         if error_counter == 0:
