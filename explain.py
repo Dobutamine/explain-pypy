@@ -3302,6 +3302,11 @@ class Ventilator(BaseModelClass):
         self.insp_flow = insp_flow
         self.vent_mode = "PS"
 
+    def trigger_breath(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0):
+        # trigger a breath by setting the expiration time counter
+        self._exp_time_counter = self.exp_time + 0.1
+
+
 class Ecls(BaseModelClass):
     '''
     The ECLS class models an ECLS system where blood is taken out of the circulation and oxygen added and carbon dioxied removed
@@ -3934,7 +3939,120 @@ class Placenta(BaseModelClass):
 
 # not implemented yet
 class Resuscitation(BaseModelClass):
-    pass
+    '''
+    The Resuscitation class models a resuscitation situation where chest compressions and ventilations are
+    performed at various different rates. 
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.cpr_enabled: bool = False                  # determines whether cpr is enabled or not
+        self.chest_comp_enabled: bool = True            # determines whether chest compressions are enabled or not
+        self.chest_comp_freq: float = 100.0             # chest compressions frequency (compressions / min)
+        self.chest_comp_max_pres: float = 10.0          # maximal pressure of the chest compressions (mmHg)
+        self.chest_comp_targets: dict = { "THORAX": 0.1}# dictionary holding the target models of the chest compressions and the relative force
+        self.chest_comp_no: int = 15                    # number of compressions if not continuous
+        self.chest_comp_cont: bool = False              # determines whether the chest compressions are continuous
+        
+        self.vent_enabled: bool = True                  # determines whether the ventilations are enabled or not
+        self.vent_freq: float = 30.0                    # ventilations frequency (breaths / min)
+        self.vent_no: int = 2                           # number of ventilatins if not continuous
+        self.vent_cont: bool = False                    # determines whether the ventilations are continuous or not
+        self.vent_pres_pip: float = 16.0                # peak pressure of the ventilations (cmH2O)
+        self.vent_pres_peep: float = 5.0                # positive end expiratory pressure of the ventilations (cmH2O)
+        self.vent_insp_time: float = 1.0                # inspiration time of the ventilations (s)
+        self.vent_fio2: float = 0.21                    # fio2 of the inspired air
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.chest_comp_pres: float = 0.0               # compression pressure (mmHg)
+
+        # -----------------------------------------------
+        # local variables
+        self._ventilator: object = None                 # reference to the mechanical ventilator model
+        self._breathing: object = None                  # reference to the breathing model
+        self._comp_timer: float = 0.0                   # compressions timer (s)
+        self._comp_counter: int = 0.0                   # counter of the number of compressions
+        self._comp_pause: bool = False                  # determines whether the compressions are paused or not
+        self._comp_pause_interval: float = 2.0          # interval of the compressions pause (s)
+        self._comp_pause_counter: float = 0.0           # compressions pause counter (s)
+        self._vent_interval: float = 0.0                # interval between ventilations (s)
+        self._vent_counter: float = 0.0                 # ventilation interval counter (s)
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # get references to the model on which this model depends
+        self._ventilator = self._model_engine.models["Ventilator"]
+        self._breathing = self._model_engine.models["Breathing"]
+        
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # return if cpr is not enabled
+        if not self.cpr_enabled:
+            return
+
+        if not self._comp_pause:
+            # configure the ventilator
+            # self._ventilator.set_pc(self.vent_pres_pip, self.vent_pres_peep, self.vent_freq, self.vent_insp_time, 10.0)
+            self._ventilator.pip_cmh2o = self.vent_pres_pip
+            self._ventilator.pip_cmh2o_max = self.vent_pres_pip
+            self._ventilator.peep_cmh2o = self.vent_pres_peep
+            self._ventilator.vent_rate = 1.0
+            self._ventilator.insp_time = self.vent_insp_time
+            self._ventilator.insp_flow = 10.
+            self._ventilator.vent_mode = "PC"
+
+            # calculate the compression pause (no of ventilations * breath duration)
+            self._comp_pause_interval = (60.0 / self.vent_freq) * self.vent_no
+
+            # calculate the compression force according to y(t) = A sin(2PIft+o) where A = amplitude, f = frequency in Hz, t is time, o = phase shift
+            a = self.chest_comp_max_pres / 2.0
+            f = self.chest_comp_freq / 60.0
+            self.chest_comp_pres = a * math.sin(2 * math.pi * f * self._comp_timer - 0.5 * math.pi) + a
+            
+            # increase the compressions timer
+            self._comp_timer += self._t
+
+            # check whether the compression has ended
+            if self._comp_timer > (60.0 / self.chest_comp_freq):
+                # reset the compression timer
+                self._comp_timer = 0.0
+                # increase the number of compressions
+                self._comp_counter += 1
+        else:
+            # increase the compressions pause counter
+            self._comp_pause_counter += self._t
+            # check whether the compression pause is over
+            if self._comp_pause_counter > self._comp_pause_interval:
+                self._comp_pause = False
+                self._comp_pause_counter = 0.0
+                self._comp_counter = 0
+
+
+        # check whether we need to pause the compressions
+        if self._comp_counter >= self.chest_comp_no and not self.chest_comp_cont:
+            self._comp_pause = True
+            self._comp_pause_counter = 0.0
+            self._comp_counter = 0
+            self._ventilator.trigger_breath()
+
+        
+    def switch_cpr(self, state):
+        if state:
+            self._ventilator.switch_ventilator(True)
+            self._breathing.switch_breathing(False)
+            self.cpr_enabled = True
+        else:
+            self.cpr_enabled = False
+
 
 #----------------------------------------------------------------------------------------------------------------------------
 class Circulation(BaseModelClass):
@@ -6999,6 +7117,12 @@ baseline_term_neonate = {
             "vsd_length": 2.0,
             "vsd_backflow_factor": 1.0,
             "vsd_r_k": 1.0
+        },
+        "Resuscitation": {
+            "name": "Resuscitation",
+            "model_type": "Resuscitation",
+            "description": "Resuscitation model",
+            "is_enabled": True
         }
     }
 }
