@@ -550,9 +550,6 @@ class BloodCapacitance(BaseModelClass):
             _vol_not_removed = -self.vol
             # set he current volume to zero
             self.vol = 0.0
-            # signal the user that there's a problem
-            print(f"Negative volume error in blood capacitance: {self.name}!")
-
             # return the volume which could not be removed
             return _vol_not_removed
         
@@ -707,9 +704,6 @@ class BloodTimeVaryingElastance(BaseModelClass):
             _vol_not_removed = -self.vol
             # set he current volume to zero
             self.vol = 0.0
-            # signal the user that there's a problem
-            print(f"Negative volume error in blood capacitance: {self.name}!")
-
             # return the volume which could not be removed
             return _vol_not_removed
         
@@ -1361,6 +1355,7 @@ class GasCapacitance(BaseModelClass):
         self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
         self.el_base: float = 0.0                       # baseline elastance E of the capacitance in (mmHg/L)
         self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.pres_atm: float = 760                      # atmospheric pressure (mmHg)
         self.pres_ext: float = 0.0                      # external pressure p2(t) (mmHg)
         self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg)
         self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
@@ -1504,9 +1499,6 @@ class GasCapacitance(BaseModelClass):
             _vol_not_removed = -self.vol
             # set he current volume to zero
             self.vol = 0.0
-            # signal the user that there's a problem
-            print(f"Negative volume error in blood capacitance: {self.name}!")
-
             # return the volume which could not be removed
             return _vol_not_removed
         
@@ -1669,16 +1661,16 @@ class GasResistor(BaseModelClass):
         if (_p1_t >= _p2_t):
             self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / _r_for      # flow L/s
             # update the volumes of the connected components
-            self._comp_from.volume_out(self.flow * self._t)
-            self._comp_to.volume_in(self.flow * self._t, self._comp_from)
+            vol_not_removed = self._comp_from.volume_out(self.flow * self._t)
+            self._comp_to.volume_in((self.flow * self._t) - vol_not_removed, self._comp_from)
             return
         
         # calculate the backward flow between two volume containing gas capacitances
         if (_p1_t < _p2_t and not self.no_back_flow):
             self.flow = ((_p1_t - _p2_t) + _r_k * math.pow(self.flow, 2)) / _r_back
             # update the volumes of the connected components
-            self._comp_to.volume_out(-self.flow * self._t)
-            self._comp_from.volume_in(-self.flow * self._t, self._comp_to)
+            vol_not_removed = self._comp_to.volume_out(-self.flow * self._t)
+            self._comp_from.volume_in((-self.flow * self._t) - vol_not_removed, self._comp_to)
             return
 
 class GasExchanger(BaseModelClass):
@@ -1866,7 +1858,7 @@ class Container(BaseModelClass):
         self.pres_in = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol)
 
         # calculate the total pressure
-        self.pres = self.pres_in + self.pres_ext
+        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
 
         # transfer the container pressure to the contained components
         for c in self._contained_components:
@@ -3306,7 +3298,6 @@ class Ventilator(BaseModelClass):
         # trigger a breath by setting the expiration time counter
         self._exp_time_counter = self.exp_time + 0.1
 
-
 class Ecls(BaseModelClass):
     '''
     The ECLS class models an ECLS system where blood is taken out of the circulation and oxygen added and carbon dioxied removed
@@ -3937,7 +3928,6 @@ class Placenta(BaseModelClass):
         res = res * 0.00000750062
         return res
 
-# not implemented yet
 class Resuscitation(BaseModelClass):
     '''
     The Resuscitation class models a resuscitation situation where chest compressions and ventilations are
@@ -3950,17 +3940,14 @@ class Resuscitation(BaseModelClass):
         # -----------------------------------------------
         # initialize independent properties
         self.cpr_enabled: bool = False                  # determines whether cpr is enabled or not
-        self.chest_comp_enabled: bool = True            # determines whether chest compressions are enabled or not
         self.chest_comp_freq: float = 100.0             # chest compressions frequency (compressions / min)
         self.chest_comp_max_pres: float = 10.0          # maximal pressure of the chest compressions (mmHg)
         self.chest_comp_targets: dict = { "THORAX": 0.1}# dictionary holding the target models of the chest compressions and the relative force
         self.chest_comp_no: int = 15                    # number of compressions if not continuous
         self.chest_comp_cont: bool = False              # determines whether the chest compressions are continuous
         
-        self.vent_enabled: bool = True                  # determines whether the ventilations are enabled or not
         self.vent_freq: float = 30.0                    # ventilations frequency (breaths / min)
         self.vent_no: int = 2                           # number of ventilatins if not continuous
-        self.vent_cont: bool = False                    # determines whether the ventilations are continuous or not
         self.vent_pres_pip: float = 16.0                # peak pressure of the ventilations (cmH2O)
         self.vent_pres_peep: float = 5.0                # positive end expiratory pressure of the ventilations (cmH2O)
         self.vent_insp_time: float = 1.0                # inspiration time of the ventilations (s)
@@ -3991,6 +3978,9 @@ class Resuscitation(BaseModelClass):
         self._ventilator = self._model_engine.models["Ventilator"]
         self._breathing = self._model_engine.models["Breathing"]
         
+        # set the fio2 on the ventilator
+        self.set_fio2(self.vent_fio2)
+
         # flag that the model is initialized
         self._is_initialized = True
 
@@ -3998,21 +3988,39 @@ class Resuscitation(BaseModelClass):
         # return if cpr is not enabled
         if not self.cpr_enabled:
             return
-
-        if not self._comp_pause:
-            # configure the ventilator
-            # self._ventilator.set_pc(self.vent_pres_pip, self.vent_pres_peep, self.vent_freq, self.vent_insp_time, 10.0)
-            self._ventilator.pip_cmh2o = self.vent_pres_pip
-            self._ventilator.pip_cmh2o_max = self.vent_pres_pip
-            self._ventilator.peep_cmh2o = self.vent_pres_peep
+        
+        # calculate the compression pause (no of ventilations * breath duration)
+        self._comp_pause_interval = (60.0 / self.vent_freq) * self.vent_no
+        self._vent_interval = (self._comp_pause_interval / self.vent_no) + self._t
+        # if the compressions are continuous set the ventilator frequency on the ventilator model
+        if self.chest_comp_cont:
+            self._ventilator.vent_rate = self.vent_freq
+        else:
+            # if the compressions or not continuous set a extremely low ventilator rate
+            # as the ventilator breaths are triggered differently
             self._ventilator.vent_rate = 1.0
-            self._ventilator.insp_time = self.vent_insp_time
-            self._ventilator.insp_flow = 10.
-            self._ventilator.vent_mode = "PC"
 
-            # calculate the compression pause (no of ventilations * breath duration)
-            self._comp_pause_interval = (60.0 / self.vent_freq) * self.vent_no
 
+        # if there is a pause in the compressions
+        if self._comp_pause:
+            # increase the compressions pause counter
+            self._comp_pause_counter += self._t
+
+            # check whether the compression pause is over
+            if self._comp_pause_counter > self._comp_pause_interval:
+                self._comp_pause = False
+                self._comp_pause_counter = 0.0
+                self._comp_counter = 0
+                self._vent_counter = 0.0
+            
+            # increase the ventilator interval timer
+            self._vent_counter += self._t
+
+            # trigger a breath when the ventilator counter is reached
+            if self._vent_counter > self._vent_interval:
+                self._vent_counter = 0.0
+                self._ventilator.trigger_breath()
+        else:
             # calculate the compression force according to y(t) = A sin(2PIft+o) where A = amplitude, f = frequency in Hz, t is time, o = phase shift
             a = self.chest_comp_max_pres / 2.0
             f = self.chest_comp_freq / 60.0
@@ -4027,15 +4035,6 @@ class Resuscitation(BaseModelClass):
                 self._comp_timer = 0.0
                 # increase the number of compressions
                 self._comp_counter += 1
-        else:
-            # increase the compressions pause counter
-            self._comp_pause_counter += self._t
-            # check whether the compression pause is over
-            if self._comp_pause_counter > self._comp_pause_interval:
-                self._comp_pause = False
-                self._comp_pause_counter = 0.0
-                self._comp_counter = 0
-
 
         # check whether we need to pause the compressions
         if self._comp_counter >= self.chest_comp_no and not self.chest_comp_cont:
@@ -4044,15 +4043,23 @@ class Resuscitation(BaseModelClass):
             self._comp_counter = 0
             self._ventilator.trigger_breath()
 
-        
+        # apply the compression force to the target
+        for key, value in self.chest_comp_targets.items():
+            self._model_engine.models[key].pres_cc = float(self.chest_comp_pres * value)
+
+
+    
     def switch_cpr(self, state):
         if state:
             self._ventilator.switch_ventilator(True)
+            self._ventilator.set_pc(self.vent_pres_pip, self.vent_pres_peep, 1.0, self.vent_insp_time, 5.0)
             self._breathing.switch_breathing(False)
             self.cpr_enabled = True
         else:
             self.cpr_enabled = False
 
+    def set_fio2(self, new_fio2):
+        self._ventilator.set_fio2(new_fio2)
 
 #----------------------------------------------------------------------------------------------------------------------------
 class Circulation(BaseModelClass):
@@ -7122,7 +7129,30 @@ baseline_term_neonate = {
             "name": "Resuscitation",
             "model_type": "Resuscitation",
             "description": "Resuscitation model",
-            "is_enabled": True
+            "is_enabled": True,
+            "chest_comp_freq": 100.0,
+            "chest_comp_max_pres": 60.0,
+            "chest_comp_targets": {
+                "CHEST_L": 0.2,
+                "CHEST_R": 0.2,
+                "LA": 0.5,
+                "LV": 1,
+                "RA": 0.8,
+                "RV": 1,
+                "AA": 0.7,
+                "AAR": 0.7,
+                "SVC": 0.5,
+                "IVCI": 0.5,
+                "COR": 1
+            },
+            "chest_comp_no": 15,
+            "chest_comp_cont": False,
+            "vent_freq": 30.0,
+            "vent_no": 2,
+            "vent_pres_pip": 16.0,
+            "vent_pres_peep": 5.0,
+            "vent_insp_time": 1.0,
+            "vent_fio2": 0.21
         }
     }
 }
