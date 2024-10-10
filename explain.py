@@ -4559,8 +4559,6 @@ class RenalAutoregulation(BaseModelClass):
         self._counter_TGF: int = 0
         self._d_GFR: float = 0.0
 
-
-
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
         for key, value in args.items():
