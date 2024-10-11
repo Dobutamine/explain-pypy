@@ -5022,10 +5022,30 @@ class TaskScheduler():
 # WORK IN PROGRESS
 class Scaler():
     def __init__(self, model_ref: object) -> None:
+        # -----------------------------------------------
+        # initialize the independent properties
+        self.weight: float = 0.0                        # weight (kg)
+        self.height: float = 0.0                        # height (m)
+        self.total_blood_volume_kg: float = 0.0         # total blood volume (L/kg)
+        self.total_gas_volme_kg: float = 0.0            # total gas volume (L/kg)
+        self.global_scaling_factor: float = 1.0         # global scaling factor
+
+        # -----------------------------------------------
+        # initialize the dependent properties
+
+        # -----------------------------------------------
+        # initialize the local properties
         self._model_engine: object = model_ref          # object holding a reference to the model engine
-        self._t: float = model_ref.modeling_stepsize    # setting the modeling stepsize
-        self._is_initialized: bool = False              # flag whether the model is initialized or not
-        self.is_enabled: bool = True                    # flag that the scaler is enabled
+        self._t: float = model_ref.modeling_stepsize    # modeling stepsize
+
+
+
+
+
+
+    def scale_patient(self, new_weight: float, new_height: float, blood_volume_kg: float = 80):
+        pass
+
 
 class Plotter():
     def __init__(self) -> None:
