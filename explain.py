@@ -1738,6 +1738,9 @@ class GasExchanger(BaseModelClass):
         po2_gas = self._gas.po2
         pco2_gas = self._gas.pco2
 
+        if self._blood.vol == 0.0:
+            return
+        
         # calculate the O2 flux from the blood to the gas compartment
         self.flux_o2 = ((po2_blood - po2_gas) * self.dif_o2 * self.dif_o2_factor * self.dif_o2_scaling_factor * self._t)
 
@@ -2535,6 +2538,9 @@ class Metabolism(BaseModelClass):
             to2 = self._model_engine.models[model].to2
             tco2 = self._model_engine.models[model].tco2
 
+            if vol == 0.0:
+                return
+            
             # calculate the change in oxygen concentration in this step
             dto2 = vo2_step * fvo2
 
@@ -4274,7 +4280,7 @@ class Circulation(BaseModelClass):
     def get_total_blood_volume(self) -> float:
         total_volume: float = 0.0
         # iterate over all blood containing models
-        for _, m in self.models.items():
+        for _, m in self._model_engine.models.items():
             if (m.model_type in self._blood_containing_modeltypes):
                 # if the model is enabled then at the current volume to the total volume
                 if (m.is_enabled):
@@ -4292,7 +4298,7 @@ class Circulation(BaseModelClass):
         # calculate the change in total blood volume
         blood_volume_change = new_blood_volume / current_blood_volume
         # iterate over all blood containing models
-        for _, m in self.models.items():
+        for _, m in self._model_engine.models.items():
             if (m.model_type in self._blood_containing_modeltypes):
                 if (m.is_enabled):
                     # change the volume with the blood_volume_change_factor
@@ -5024,12 +5030,10 @@ class Scaler():
     def __init__(self, model_ref: object) -> None:
         # -----------------------------------------------
         # initialize the independent properties
-        self.weight: float = 0.0                        # weight (kg)
-        self.height: float = 0.0                        # height (m)
+        self.reference_weight = 3.545
         self.total_blood_volume_kg: float = 0.0         # total blood volume (L/kg)
-        self.total_gas_volme_kg: float = 0.0            # total gas volume (L/kg)
-        self.global_scaling_factor: float = 1.0         # global scaling factor
-
+        self.total_gas_volume_kg: float = 0.0            # total gas volume (L/kg)
+        self.global_scale_factor: float = 1.0           # global scaling factor
         # -----------------------------------------------
         # initialize the dependent properties
 
@@ -5037,14 +5041,69 @@ class Scaler():
         # initialize the local properties
         self._model_engine: object = model_ref          # object holding a reference to the model engine
         self._t: float = model_ref.modeling_stepsize    # modeling stepsize
+        self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
 
+    def scale_patient(self, new_weight: float, new_blood_volume_kg: float = 0.08):
+        # calculate the global weight based scaling factor
+        self.global_scale_factor = new_weight / self.reference_weight
 
+        # store the new weight
+        self._model_engine.weight = new_weight
 
+        # scale the blood volume
+        self.set_blood_volume_kg(new_blood_volume_kg)
 
+        # # scale the model components
+        # for _, m in self._model_engine.models.items():
+        #     if hasattr(m, "u_vol_scaling_factor"):
+        #         # scale the unstressed volume
+        #         m.u_vol_scaling_factor = self.global_scale_factor
+        #     if hasattr(m, "el_base_scaling_factor"):
+        #         # scale the baseline elastance
+        #         m.el_base_scaling_factor = 1.0 / self.global_scale_factor
+        #     if hasattr(m, "el_min_scaling_factor"):
+        #         # scale the minimal elastance
+        #         m.el_min_scaling_factor = 1.0 / self.global_scale_factor
+        #     if hasattr(m, "el_max_scaling_factor"):
+        #         # scale the maximal elastance
+        #         m.el_max_scaling_factor = 1.0 / self.global_scale_factor
+        #     if hasattr(m, "r_scaling_factor"):
+        #         # scale the resistance
+        #         m.r_scaling_factor = 1.0 / self.global_scale_factor
 
+    def set_blood_volume_kg(self, new_blood_volume_kg: float):
+        # get the current absolute total volume (L)
+        current_blood_volume = self.get_total_blood_volume()
 
-    def scale_patient(self, new_weight: float, new_height: float, blood_volume_kg: float = 80):
-        pass
+        # determine the new absolute blood volume (L)
+        target_blood_volume = new_blood_volume_kg * self._model_engine.weight
+
+        # calculate the change of the total volume
+        scale_factor = target_blood_volume / current_blood_volume
+
+        print(self.global_scale_factor, scale_factor)
+
+        # change the volume of the blood containing models
+        for _, m in self._model_engine.models.items():
+            if (m.model_type in self._blood_containing_modeltypes):
+                m.vol = m.vol * scale_factor
+                m.u_vol = m.u_vol * scale_factor
+
+        # store the new total volume (L/kg)
+        self.total_blood_volume_kg = self.get_total_blood_volume() / self._model_engine.weight
+
+    def get_total_blood_volume(self) -> float:
+        # declare an object for storing the volume
+        _total_volume: float = 0.0
+        # iterate over all blood containing models
+        for _, m in self._model_engine.models.items():
+            if (m.model_type in self._blood_containing_modeltypes):
+                # if the model is enabled then at the current volume to the total volume
+                if (m.is_enabled):
+                    _total_volume += m.vol
+                    
+        # return the total blood volume
+        return _total_volume
 
 
 class Plotter():
