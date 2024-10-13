@@ -4975,7 +4975,7 @@ class TaskScheduler():
             p = getattr(task["model"], task["prop1"])
             p[task["prop2"]] = task["current_value"]
 
-# WORK IN PROGRESS
+# NEEDS A GOOD CHECK
 class Scaler():
     def __init__(self, model_ref: object) -> None:
         # -----------------------------------------------
@@ -5336,8 +5336,6 @@ class Scaler():
         for m in self._model_engine.model_groups["chestwall"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cw_factor
             m.u_vol_scaling_factor = self.u_vol_cw_factor
-
-
 
 class Plotter():
     def __init__(self) -> None:
