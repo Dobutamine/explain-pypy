@@ -4110,66 +4110,15 @@ class Circulation(BaseModelClass):
         self.pulm_art_u_vol_ans_factor: float = 1.0     # pulmonary arteries unstressed volume ans factor
         self.pulm_ven_u_vol_ans_factor: float = 1.0     # pulmonary veins unstressed volume ans factor
 
-        self.pulm_arteries: list = []                   # names of the pulmonary arteries
-        self.pulm_veins: list = []                      # names of the pulmonary veins
-        self.pulm_art_resistors: list = []              # names of the pulmonary arterial resistors
-        self.pulm_ven_resistors: list = []              # names of the pulmonary venous resistors
-        self.syst_arteries: list = []                   # names of the systemic arteries
-        self.syst_art_resistors: list = []              # names of the systemic arterial resistors
-        self.syst_veins: list = []                      # names of the systemic veins
-        self.syst_ven_resistors: list = []              # names of the systemic venous resistors
-
         # -----------------------------------------------
         # dependent properties
         self.total_blood_volume: float = 0.0            # holds the current total blood volume
 
         # -----------------------------------------------
         # local properties
-        self._pulm_arteries: list = []                  # references to the pulmonary arteries
-        self._pulm_veins: list = []                     # references to the pulmonary veins
-        self._pulm_art_resistors: list = []             # references to the pulmonary arterial resistors
-        self._pulm_ven_resistors: list = []             # references to the pulmonary venous resistors
-        self._syst_arteries: list = []                  # references to the systemic arteries
-        self._syst_art_resistors: list = []             # references to the systemic arterial resistors
-        self._syst_veins: list = []                     # references to the systemic veins
-        self._syst_ven_resistors: list = []             # references to the systemic venous resistors
         self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
         self._update_interval: float = 0.015            # update interval (s)
         self._update_counter: float = 0.0               # update interval counter (s)
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # store the references to the models for performance reasons
-        for t in self.pulm_arteries:
-            self._pulm_arteries.append(self._model_engine.models[t])
-
-        for t in self.pulm_art_resistors:
-            self._pulm_art_resistors.append(self._model_engine.models[t])
-
-        for t in self.pulm_veins:
-            self._pulm_veins.append(self._model_engine.models[t])
-
-        for t in self.pulm_ven_resistors:
-            self._pulm_ven_resistors.append(self._model_engine.models[t])
-
-        for t in self.syst_arteries:
-            self._syst_arteries.append(self._model_engine.models[t])
-
-        for t in self.syst_art_resistors:
-            self._syst_art_resistors.append(self._model_engine.models[t])
-
-        for t in self.syst_veins:
-            self._syst_veins.append(self._model_engine.models[t])
-
-        for t in self.syst_ven_resistors:
-            self._syst_ven_resistors.append(self._model_engine.models[t])
-
-
-        # flag that the model is initialized
-        self._is_initialized = True
 
     def calc_model(self) -> None:
         self._update_counter += self._t
@@ -4177,104 +4126,104 @@ class Circulation(BaseModelClass):
             self._update_counter = 0.0
 
             # update the ans factors, as they are continuously set we need to update them
-            for t in self._syst_arteries:
+            for t in self._model_engine.model_groups["syst_arteries"]:
                 t.el_base_ans_factor = self.syst_art_el_ans_factor
                 t.u_vol_ans_factor = self.syst_art_u_vol_ans_factor
 
-            for t in self._syst_art_resistors:
+            for t in self._model_engine.model_groups["syst_art_resistors"]:
                 t.r_ans_factor = self.syst_art_res_ans_factor
 
-            for t in self._syst_veins:
+            for t in self._model_engine.model_groups["syst_veins"]:
                 t.el_base_ans_factor = self.syst_ven_el_ans_factor
                 t.u_vol_ans_factor = self.syst_ven_u_vol_ans_factor
 
-            for t in self._syst_ven_resistors:
+            for t in self._model_engine.model_groups["syst_ven_resistors"]:
                 t.r_ans_factor = self.syst_ven_res_ans_factor
 
-            for t in self._pulm_arteries:
+            for t in self._model_engine.model_groups["pulm_arteries"]:
                 t.el_base_ans_factor = self.pulm_art_el_ans_factor
                 t.u_vol_ans_factor = self.pulm_art_u_vol_ans_factor
 
-            for t in self._pulm_art_resistors:
+            for t in self._model_engine.model_groups["pulm_art_resistors"]:
                 t.r_ans_factor = self.pulm_art_res_ans_factor
 
-            for t in self._pulm_veins:
+            for t in self._model_engine.model_groups["pulm_veins"]:
                 t.el_base_ans_factor = self.pulm_ven_el_ans_factor
                 t.u_vol_ans_factor = self.pulm_ven_u_vol_ans_factor
 
-            for t in self._pulm_ven_resistors:
+            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
                 t.r_ans_factor = self.pulm_ven_res_ans_factor
 
     def change_pulm_art_elastance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_el_factor = change
-            for t in self._pulm_arteries:
+            for t in self._model_engine.model_groups["pulm_arteries"]:
                     t.el_base_ans_factor = self.pulm_art_el_factor
     
     def change_pulm_art_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_u_vol_factor = change
-            for t in self._pulm_arteries:
+            for t in self._model_engine.model_groups["pulm_arteries"]:
                     t.r_ans_factor = self.pulm_art_u_vol_factor
 
     def change_pulm_art_resistance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_art_res_factor = change
-            for t in self._pulm_art_resistors:
+            for t in self._model_engine.model_groups["pulm_art_resistors"]:
                     t.r_factor = self.pulm_art_res_factor
              
     def change_pulm_ven_elastance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_el_factor = change
-            for t in self._pulm_veneries:
+            for t in self._model_engine.model_groups["pulm_veins"]:
                     t.el_base_ans_factor = self.pulm_ven_el_factor
     
     def change_pulm_ven_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_u_vol_factor = change
-            for t in self._pulm_veneries:
+            for t in self._model_engine.model_groups["pulm_veins"]:
                     t.r_ans_factor = self.pulm_ven_u_vol_factor
 
     def change_pulm_ven_resistance(self, change: float) -> None:
         if change > 0.0:
             self.pulm_ven_res_factor = change
-            for t in self._pulm_ven_resistors:
+            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
                     t.r_factor = self.pulm_ven_res_factor
     
     def change_syst_art_elastance(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_el_factor = change
-            for t in self._syst_arteries:
+            for t in self._model_engine.model_groups["syst_arteries"]:
                     t.el_base_ans_factor = self.syst_art_el_factor
     
     def change_syst_art_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_u_vol_factor = change
-            for t in self._syst_arteries:
+            for t in self._model_engine.model_groups["syst_arteries"]:
                     t.r_ans_factor = self.syst_art_u_vol_factor
 
     def change_syst_art_resistance(self, change: float) -> None:
         if change > 0.0:
             self.syst_art_res_factor = change
-            for t in self._syst_art_resistors:
+            for t in self._model_engine.model_groups["syst_art_resistors"]:
                     t.r_factor = self.syst_art_res_factor
              
     def change_syst_ven_elastance(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_el_factor = change
-            for t in self._syst_veneries:
+            for t in self._model_engine.model_groups["syst_veins"]:
                     t.el_base_ans_factor = self.syst_ven_el_factor
     
     def change_syst_ven_u_vol(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_u_vol_factor = change
-            for t in self._syst_veneries:
+            for t in self._model_engine.model_groups["syst_veins"]:
                     t.r_ans_factor = self.syst_ven_u_vol_factor
 
     def change_syst_ven_resistance(self, change: float) -> None:
         if change > 0.0:
             self.syst_ven_res_factor = change
-            for t in self._syst_ven_resistors:
+            for t in self._model_engine.model_groups["syst_ven_resistors"]:
                     t.r_factor = self.syst_ven_res_factor
 
     def get_total_blood_volume(self) -> float:
@@ -5043,7 +4992,7 @@ class Scaler():
         self._t: float = model_ref.modeling_stepsize    # modeling stepsize
         self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
 
-    def scale_patient(self, new_weight: float, new_blood_volume_kg: float = 0.08):
+    def scale_patient(self, new_weight: float, new_blood_volume_kg: float = 0.08, new_gas_volume_kg: float = 0.04):
         # calculate the global weight based scaling factor
         self.global_scale_factor = new_weight / self.reference_weight
 
@@ -5051,27 +5000,12 @@ class Scaler():
         self._model_engine.weight = new_weight
 
         # scale the blood volume
-        self.set_blood_volume_kg(new_blood_volume_kg)
+        self.set_blood_volume(new_blood_volume_kg)
 
-        # # scale the model components
-        # for _, m in self._model_engine.models.items():
-        #     if hasattr(m, "u_vol_scaling_factor"):
-        #         # scale the unstressed volume
-        #         m.u_vol_scaling_factor = self.global_scale_factor
-        #     if hasattr(m, "el_base_scaling_factor"):
-        #         # scale the baseline elastance
-        #         m.el_base_scaling_factor = 1.0 / self.global_scale_factor
-        #     if hasattr(m, "el_min_scaling_factor"):
-        #         # scale the minimal elastance
-        #         m.el_min_scaling_factor = 1.0 / self.global_scale_factor
-        #     if hasattr(m, "el_max_scaling_factor"):
-        #         # scale the maximal elastance
-        #         m.el_max_scaling_factor = 1.0 / self.global_scale_factor
-        #     if hasattr(m, "r_scaling_factor"):
-        #         # scale the resistance
-        #         m.r_scaling_factor = 1.0 / self.global_scale_factor
+        # scale the gas volume
+        self.set_gas_volume(new_gas_volume_kg)
 
-    def set_blood_volume_kg(self, new_blood_volume_kg: float):
+    def set_blood_volume(self, new_blood_volume_kg: float):
         # get the current absolute total volume (L)
         current_blood_volume = self.get_total_blood_volume()
 
@@ -5081,12 +5015,12 @@ class Scaler():
         # calculate the change of the total volume
         scale_factor = target_blood_volume / current_blood_volume
 
-        print(self.global_scale_factor, scale_factor)
-
         # change the volume of the blood containing models
         for _, m in self._model_engine.models.items():
             if (m.model_type in self._blood_containing_modeltypes):
+                # scale the blood volume
                 m.vol = m.vol * scale_factor
+                # keep the ratio between the volume and unstressed volume the same
                 m.u_vol = m.u_vol * scale_factor
 
         # store the new total volume (L/kg)
@@ -5105,6 +5039,39 @@ class Scaler():
         # return the total blood volume
         return _total_volume
 
+    def set_gas_volume(self, new_gas_volume_kg: float):
+        # get the current absolute total volume (L)
+        current_gas_volume = self.get_total_gas_volume()
+
+        # determine the new absolute blood volume (L)
+        target_gas_volume = new_gas_volume_kg * self._model_engine.weight
+
+        # calculate the change of the total volume
+        scale_factor = target_gas_volume / current_gas_volume
+
+        # change the volume of the blood containing models
+        for _, m in self._model_engine.models.items():
+            if (m.name in ["ALL", "ALR", "DS"]):
+                # scale the gas volume
+                m.vol = m.vol * scale_factor
+                # keep the ratio between the volume and unstressed volume the same
+                m.u_vol = m.u_vol * scale_factor
+
+        # store the new total volume (L/kg)
+        self.total_gas_volume_kg = self.get_total_gas_volume() / self._model_engine.weight
+
+    def get_total_gas_volume(self) -> float:
+        # declare an object for storing the volume
+        _total_volume: float = 0.0
+        # iterate over all blood containing models
+        for _, m in self._model_engine.models.items():
+            if m.name in ["ALL", "ALR", "DS"]:
+                # if the model is enabled then at the current volume to the total volume
+                if (m.is_enabled):
+                    _total_volume += m.vol
+                    
+        # return the total gas volume
+        return _total_volume
 
 class Plotter():
     def __init__(self) -> None:
@@ -5306,6 +5273,9 @@ class ModelEngine():
         # define an object holding the entire model and submodels
         self.models: dict = {}
 
+        # define an object holding the model groups
+        self.model_groups: dict = {}
+
         # define an object holding the generated model data
         self.model_data: list = []
 
@@ -5355,6 +5325,7 @@ class ModelEngine():
 
         # make sure the objects are empty
         self.models: dict = {}
+        self.model_groups: dict = {}
         self.model_data: list = []
         self._datacollector: object = None
         self._task_scheduler: object = None
@@ -5374,6 +5345,7 @@ class ModelEngine():
             self.bsa = math.pow((self.weight * (self.height * 100.0) / 3600.0), 0.5)
             self.modeling_stepsize = self.model_definition["modeling_stepsize"]
             self.model_time_total = self.model_definition["model_time_total"]
+            self.model_groups = self.model_definition["model_groups"].copy()
         except:
             # signal that the model definition dictionary failed
             print(f"The model definition dictionary could not be processed correctly!")
@@ -5401,6 +5373,21 @@ class ModelEngine():
         self._plotter = Plotter()
         self._scaler = Scaler(self)
 
+        # replace contents of the model_groups with references to the models instead of the names
+        model_groups_refs = {}
+        # iterate over the model groups
+        for group, model_list in self.model_groups.items():
+            # declare a llist to hold the references to the actual models
+            group_model_list = []
+            # iterate over the group models list
+            for model in model_list:
+                # add a reference to the temporary group model list
+                group_model_list.append(self.models[model])
+            # make an entry for the group and set the group model list
+            model_groups_refs[group] = group_model_list
+        # copy the new model_groups dictionary to the old one
+        self.model_groups = model_groups_refs.copy()
+            
         # initialize all the submodels if there are no errors
         if error_counter == 0:
             init_errors = 0
@@ -5623,7 +5610,7 @@ class ModelEngine():
         for idx, parameter in enumerate(properties):
             prop_category = parameter.split(sep=".")
 
-            if (prop_category[1] == "pres"):
+            if (prop_category[1] == "pres" or prop_category[1] == "pres_in"):
                 data = np.array(y[idx])
                 max = round(np.amax(data), 5)
                 min = round(np.amin(data), 5)
@@ -7162,15 +7149,7 @@ baseline_term_neonate = {
             "name": "Circulation",
             "model_type": "Circulation",
             "description": "circulation methods",
-            "is_enabled": True,
-            "pulm_arteries": ["PA"],
-            "pulm_veins": ["PV"],
-            "pulm_art_resistors": ["PA_LL", "PA_RL"],
-            "pulm_ven_resistors": ["LL_PV", "RL_PV"],
-            "syst_arteries": ["AA", "AAR", "AD"],
-            "syst_art_resistors": ["AD_INT", "AD_KID", "AD_LS", "AA_RUB", "AD_RLB"],
-            "syst_veins": ["IVCI", "VLB", "SVC", "VUB"],
-            "syst_ven_resistors": []
+            "is_enabled": True
         },
         "Respiration": {
             "name": "Respiration",
@@ -7242,7 +7221,20 @@ baseline_term_neonate = {
             "vent_insp_time": 1.0,
             "vent_fio2": 0.21
         }
-    }
+    },
+    "model_groups": {
+        "syst_arteries": ["AA", "AD"],
+        "syst_veins": [],
+        "pulm_arteries": [],
+        "pulm_veins": [],
+        "syst_art_resistors": [],
+        "syst_ven_resistors": [],
+        "pulm_art_resistors": [],
+        "pulm_ven_resistors": [],
+        "heart_valves": [],
+        "heart_chambers": [],
+        "capillaries": []
+    },
 }
 
 adult = {
@@ -7901,15 +7893,7 @@ adult = {
             "name": "Circulation",
             "model_type": "Circulation",
             "description": "circulation methods",
-            "is_enabled": True,
-            "pulm_arteries": [],
-            "pulm_veins": [],
-            "pulm_art_resistors": [],
-            "pulm_ven_resistors": [],
-            "syst_arteries": [],
-            "syst_art_resistors": [],
-            "syst_veins": [],
-            "syst_ven_resistors": []
+            "is_enabled": True
         },
         "RenalAutoregulation": {
             "name": "RenalAutoregulation",
@@ -7935,7 +7919,20 @@ adult = {
             "g_GFR":200,
             "g_MR":1,
         }
-  }
+    },
+    "model_groups": {
+        "syst_arteries": ["AA", "AD"],
+        "syst_veins": [],
+        "pulm_arteries": [],
+        "pulm_veins": [],
+        "syst_art_resistors": [],
+        "syst_ven_resistors": [],
+        "pulm_art_resistors": [],
+        "pulm_ven_resistors": [],
+        "heart_valves": [],
+        "heart_chambers": [],
+        "capillaries": []
+    },
 }
 
 normal_pregnant = {
@@ -8594,15 +8591,7 @@ normal_pregnant = {
             "name": "Circulation",
             "model_type": "Circulation",
             "description": "circulation methods",
-            "is_enabled": True,
-            "pulm_arteries": [],
-            "pulm_veins": [],
-            "pulm_art_resistors": [],
-            "pulm_ven_resistors": [],
-            "syst_arteries": [],
-            "syst_art_resistors": [],
-            "syst_veins": [],
-            "syst_ven_resistors": []
+            "is_enabled": True
         },
         "RenalAutoregulation": {
             "name": "RenalAutoregulation",
@@ -8628,7 +8617,20 @@ normal_pregnant = {
             "g_GFR":200,
             "g_MR":1,
         }
-    }
+    },
+    "model_groups": {
+        "syst_arteries": ["AA", "AD"],
+        "syst_veins": [],
+        "pulm_arteries": [],
+        "pulm_veins": [],
+        "syst_art_resistors": [],
+        "syst_ven_resistors": [],
+        "pulm_art_resistors": [],
+        "pulm_ven_resistors": [],
+        "heart_valves": [],
+        "heart_chambers": [],
+        "capillaries": []
+    },
 }
 #----------------------------------------------------------------------------------------------------------------------------
 # if running from an interactive python environment (e.g. jupyter/vs code) start with the following lines to import the model
