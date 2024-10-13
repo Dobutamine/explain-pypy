@@ -4991,8 +4991,8 @@ class Scaler():
         self.total_gas_volume_kg: float = 0.0           # total gas volume (L/kg)
 
         # Reference heartrate and pressures
-        self.hr_ref: float = 1.0
-        self.map_ref: float = 1.0
+        self.hr_ref: float = 125
+        self.map_ref: float = 50
 
         # Scaling factors for breathing, metabolism, and cardiovascular system
         self.minute_volume_ref_scaling_factor: float = 1.0
@@ -5047,7 +5047,7 @@ class Scaler():
         self._t: float = model_ref.modeling_stepsize    # modeling stepsize
         self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
 
-    def scale_patient(self, new_weight: float, new_blood_volume_kg: float = 0.08, new_gas_volume_kg: float = 0.04):
+    def scale_patient(self, new_weight: float, hr_ref: float, map_ref: float, new_blood_volume_kg: float = 0.08, new_gas_volume_kg: float = 0.04):
         # calculate the global weight based scaling factor
         self.global_scale_factor = new_weight / self.reference_weight
 
@@ -5059,6 +5059,44 @@ class Scaler():
 
         # scale the gas volume
         self.scale_gas_volume(new_gas_volume_kg)
+
+        # scale heart
+        self.scale_heart()
+        self.scale_heart_valves()
+        self.scale_pericardium()
+
+        # scale the arterial tree
+        self.scale_syst_arteries()
+        self.scale_syst_art_resistors()
+        self.scale_pulm_arteries()
+        self.scale_pulm_art_resistors()
+
+        # scale the venous tree
+        self.scale_syst_veins()
+        self.scale_syst_ven_resistors()
+        self.scale_pulm_veins()
+        self.scale_pulm_ven_resistors()
+
+        # scale the capillaries
+        self.scale_capillaries()
+
+        # scale the shunts
+        self.scale_shunts()
+
+        # scale the respiratory system
+        self.scale_thorax()
+        self.scale_chestwall()
+        self.scale_lungs()
+        self.scale_dead_space()
+        self.scale_upper_airways()
+        self.scale_lower_airways()
+
+        # scale the other models
+        self.scale_ans_hr(self.hr_ref)
+        self.scale_ans_map(self.map_ref)
+        self.scale_breathing()
+        self.scale_metabolism()
+        self.scale_mob()
 
         # print the scaling report
         print(f"Scaling model to {new_weight} kg => factor {self.global_scale_factor:.4f}")
@@ -5078,8 +5116,16 @@ class Scaler():
         # change the volume of the blood containing models
         for _, m in self._model_engine.models.items():
             if (m.model_type in self._blood_containing_modeltypes):
-                # scale the blood volume
+                # scale the blood volume, the unstressed volume is scaled separately!
                 m.vol = m.vol * scale_factor
+                m.u_vol = m.u_vol * scale_factor
+        
+        # change the volume of the pericardium and thorax
+        for _, m in self._model_engine.models.items():
+            if (m.name in ["THORAX", "PC"]):
+                # scale the gas volume, the unstressed volume is scaled separately!
+                m.vol = m.vol * scale_factor
+                m.u_vol = m.u_vol * scale_factor
 
         # store the new total volume (L/kg)
         self.total_blood_volume_kg = self.get_total_blood_volume() / self._model_engine.weight
@@ -5109,9 +5155,10 @@ class Scaler():
 
         # change the volume of the blood containing models
         for _, m in self._model_engine.models.items():
-            if (m.name in ["ALL", "ALR", "DS"]):
-                # scale the gas volume
+            if (m.name in ["ALL", "ALR", "DS", "CHEST_L", "CHEST_R"]):
+                # scale the gas volume, the unstressed volume is scaled separately!
                 m.vol = m.vol * scale_factor
+                m.u_vol = m.u_vol * scale_factor
 
         # store the new total volume (L/kg)
         self.total_gas_volume_kg = self.get_total_gas_volume() / self._model_engine.weight
@@ -5149,9 +5196,10 @@ class Scaler():
         # set the reference value on the Heart model
         self._model_engine.models["Heart"].heart_rate_ref = self.hr_ref
         # set the baroreceptor
-        self._model_engine.model_groups["baroreceptor"].min_value = self.map_ref / 2.0
-        self._model_engine.model_groups["baroreceptor"].set_value = self.map_ref
-        self._model_engine.model_groups["baroreceptor"].max_value = self.map_ref * 2.0
+        for m in self._model_engine.model_groups["baroreceptor"]:
+            m.min_value = self.map_ref / 2.0
+            m.set_value = self.map_ref
+            m.max_value = self.map_ref * 2.0
 
     # spontaneous breathing scalers
     def scale_breathing(self):
@@ -5178,15 +5226,15 @@ class Scaler():
         for m in self._model_engine.model_groups["heart_atria"]:
             m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_atrial_factor
             m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_atrial_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_atrial_factor
+            m.u_vol_scaling_factor = self.u_vol_atrial_factor
         for m in self._model_engine.model_groups["heart_ventricles"]:
             m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_ventricular_factor
             m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_ventricular_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_ventricular_factor
+            m.u_vol_scaling_factor = self.u_vol_ventricular_factor
         for m in self._model_engine.model_groups["coronaries"]:
             m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_cor_factor
             m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_cor_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_cor_factor
+            m.u_vol_scaling_factor = self.u_vol_cor_factor
 
     def scale_heart_valves(self):
         # set the scale factors
@@ -5197,19 +5245,19 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["pericardium"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pericardium_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_pericardium_factor
+            m.u_vol_scaling_factor = self.u_vol_pericardium_factor
 
     def scale_syst_arteries(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["syst_arteries"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_syst_art_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_syst_art_factor
+            m.u_vol_scaling_factor = self.u_vol_syst_art_factor
 
     def scale_syst_veins(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["syst_veins"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_syst_ven_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_syst_ven_factor
+            m.u_vol_scaling_factor = self.u_vol_syst_ven_factor
     
     def scale_syst_art_resistors(self):
         # set the scale factors
@@ -5225,13 +5273,13 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["pulm_arteries"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pulm_art_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_pulm_art_factor
+            m.u_vol_scaling_factor = self.u_vol_pulm_art_factor
 
     def scale_pulm_veins(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["pulm_veins"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pulm_ven_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_pulm_ven_factor
+            m.u_vol_scaling_factor = self.u_vol_pulm_ven_factor
     
     def scale_pulm_art_resistors(self):
         # set the scale factors
@@ -5247,7 +5295,7 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["capillaries"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cap_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_cap_factor
+            m.u_vol_scaling_factor = self.u_vol_cap_factor
 
     def scale_shunts(self):
         # set the scale factors
@@ -5259,13 +5307,13 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["alveoli"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_lungs_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_lungs_factor
+            m.u_vol_scaling_factor = self.u_vol_lungs_factor
 
     def scale_dead_space(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["dead_space"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_ds_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_ds_factor
+            m.u_vol_scaling_factor = self.u_vol_ds_factor
 
     def scale_upper_airways(self):
         # set the scale factors
@@ -5281,13 +5329,13 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["thorax"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_thorax_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_thorax_factor
+            m.u_vol_scaling_factor = self.u_vol_thorax_factor
 
     def scale_chestwall(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["chestwall"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cw_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_cw_factor
+            m.u_vol_scaling_factor = self.u_vol_cw_factor
 
 
 
