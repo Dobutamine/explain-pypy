@@ -2323,6 +2323,10 @@ class Ans(BaseModelClass):
         self._is_initialized = True
 
     def calc_model(self):
+        # return if ans is not active
+        if not self.ans_active:
+            return
+        
         # increase the update counter
         self._update_counter += self._t
         # is it time to run the calculations?
@@ -2522,6 +2526,7 @@ class Metabolism(BaseModelClass):
 
         # -----------------------------------------------
         # initialize independent properties
+        self.met_active: bool = True                    # flags whether the metabolism is active or not
         self.vo2: float = 8.1                           # oxygen use in ml/kg/min
         self.vo2_factor: float = 1.0                    # fraction which modulates the oxygen use by outside models
         self.vo2_scaling_factor: float = 1.0            # scaling factor of the oxygen use
@@ -2673,6 +2678,10 @@ class Mob(BaseModelClass):
         self._is_initialized = True
 
     def calc_model(self) -> None:
+        # do not run of mob is not active
+        if not self.mob_active:
+            return
+        
         # get the necessary model properties from the coronaries
         to2_cor = self._cor.to2
         tco2_cor = self._cor.tco2
@@ -5130,13 +5139,6 @@ class Scaler():
                 # scale the blood volume, the unstressed volume is scaled separately!
                 m.vol = m.vol * scale_factor
                 m.u_vol = m.u_vol * scale_factor
-        
-        # change the volume of the pericardium and thorax
-        for _, m in self._model_engine.models.items():
-            if (m.name in ["THORAX", "PC"]):
-                # scale the gas volume, the unstressed volume is scaled separately!
-                m.vol = m.vol * scale_factor
-                m.u_vol = m.u_vol * scale_factor
 
         # store the new total volume (L/kg)
         self.total_blood_volume_kg = self.get_total_blood_volume() / self._model_engine.weight
@@ -5166,7 +5168,7 @@ class Scaler():
 
         # change the volume of the blood containing models
         for _, m in self._model_engine.models.items():
-            if (m.name in ["ALL", "ALR", "DS", "CHEST_L", "CHEST_R"]):
+            if (m.name in ["ALL", "ALR", "DS"]):
                 # scale the gas volume, the unstressed volume is scaled separately!
                 m.vol = m.vol * scale_factor
                 m.u_vol = m.u_vol * scale_factor
@@ -5228,7 +5230,7 @@ class Scaler():
         # the mob model is already completely weight based
         pass
 
-    # heart and circulation
+
     def scale_heart(self):
         # set the new factors on the heart chambers
         for m in self._model_engine.model_groups["heart_atria"]:
@@ -5253,7 +5255,7 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["pericardium"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pericardium_factor
-            m.u_vol_scaling_factor = self.u_vol_pericardium_factor
+            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_pericardium_factor
 
     def scale_cor_resistors(self):
         # set the scale factors
@@ -5335,13 +5337,13 @@ class Scaler():
         # set the scaling factors
         for m in self._model_engine.model_groups["thorax"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_thorax_factor
-            m.u_vol_scaling_factor = self.u_vol_thorax_factor
+            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_thorax_factor
 
     def scale_chestwall(self):
         # set the scaling factors
         for m in self._model_engine.model_groups["chestwall"]:
             m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cw_factor
-            m.u_vol_scaling_factor = self.u_vol_cw_factor
+            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_cw_factor
 
     def scale_lungs(self):
         # set the scaling factors
