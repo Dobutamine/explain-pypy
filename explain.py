@@ -448,6 +448,7 @@ class BloodCapacitance(BaseModelClass):
         self.temp: float = 0.0                          # blood temperature (dgs C)
         self.viscosity: float = 6.0                     # blood viscosity (centiPoise = Pa * s)
         self.solutes: dict = {}                         # dictionary holding all solutes
+        self.drugs: dict = {}                           # dictionary holding all drug concentrations
         
         # -> general factors 
         self.ans_activity_factor: float = 1.0           # general ans activity factor
@@ -579,6 +580,7 @@ class BloodTimeVaryingElastance(BaseModelClass):
         self.temp: float = 0.0                          # blood temperature (dgs C)
         self.viscosity: float = 6.0                     # blood viscosity (centiPoise = Pa * s)
         self.solutes: dict = {}                         # dictionary holding all solutes
+        self.drugs: dict = {}                           # dictionary holding all drug concentrations
 
          # -> general factors 
         self.act_factor: float = 0.0                    # activation factor from the heart model (unitless)
@@ -1017,7 +1019,7 @@ class BloodDiffusor(BaseModelClass):
         _dif_co2 = self.dif_co2 * self.dif_co2_scaling_factor * self.dif_co2_factor
 
         # diffuse the gasses where the diffusion is partial pressure driven
-        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t
+        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t * self.dif_o2_factor
         # update the concentrations
         self._comp_blood1.to2 = ((self._comp_blood1.to2 * self._comp_blood1.vol) - do2) / self._comp_blood1.vol
         self._comp_blood2.to2 = ((self._comp_blood2.to2 * self._comp_blood2.vol) + do2) / self._comp_blood2.vol
@@ -1059,6 +1061,8 @@ class BloodPump(BaseModelClass):
         self.solutes: dict = {}                         # dictionary holding all solutes
         self.inlet: str = ""                            # name of the BloodResistor at the inlet of the pump
         self.outlet: str = ""                           # name of the BloodResistor at the outlet of the pump
+        self.solutes: dict = {}                         # dictionary holding all solute concentrations
+        self.drugs: dict = {}                           # dictionary holding all drug concentrations
         
         # -> general factors 
         self.ans_activity_factor: float = 1.0           # general ans activity factor
