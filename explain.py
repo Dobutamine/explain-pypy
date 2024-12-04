@@ -4568,6 +4568,199 @@ class Shunts(BaseModelClass):
         else:
             return 100000000
 
+class Monitor(BaseModelClass):
+    '''
+    The Monitor class models a patient monitor and samples vital parameters
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.hr_avg_beats: float = 5.0                  # the number of beats for averaging the heartrate
+        self.rr_avg_time: float = 20.0                  # averaging time of the respiratory rate
+        self.sat_avg_time: float = 5.0                  # averaging time of the pulse oximeter
+        self.sat_sampling_interval: float = 1.0         # sample interval of the pulse oximeter (s)
+
+        # measuring sites mapping to models
+        self.heart: str = "Heart"                       # name of the heart model
+        self.ascending_aorta: str = "AA"                # name of the ascending aorta model
+        self.descending_aorta: str = "AD"               # name of the descending aorta model
+        self.pulm_artery: str = "PA"
+        self.right_atrium: str = "RA"
+        self.breathing: str = "Breathing"
+        self.ventilator: str = "Ventilator"
+        self.aortic_valve: str = "LV_AA"
+        self.pulm_valve: str = "RV_PA"
+        self.cor_ra: str = "COR_RA"
+        self.aa_brain: str = "AA_BR"
+        self.ad_kid: str = "AA_KID"
+        self.ivc_ra: str = "IVCI_RA"
+        self.svc_ra: str = "SVC_RA"
+        self.thorax: str = "THORAX"
+        self.deadspace: str = "DS"
+
+        # -----------------------------------------------
+        # initialize dependent properties
+
+        self.heart_rate: float = 0.0                    # heartrate (bpm)
+        self.resp_rate: float = 0.0                     # respiratory rate (/min)
+        self.abp_syst: float = 0.0                      # arterial blood pressure systole (mmHg)
+        self.abp_diast: float = 0.0                     # arterial blood pressure diastole (mmHg)
+        self.abp_mean: float = 0.0                      # arterial blood pressure mean (mmHg)
+        self.abp_pre_syst : float = 0.0                 # arterial blood pressure systole (mmHg)
+        self.abp_pre_diast : float = 0.0                # arterial blood pressure diastole (mmHg)
+        self.abp_pre_mean : float = 0.0                 # arterial blood pressure mean (mmHg)
+        self.pap_syst : float = 0.0                     # pulmonary artery pressure systole (mmHg)
+        self.pap_diast : float = 0.0                    # pulmonary artery pressure diastole (mmHg)
+        self.pap_mean : float = 0.0                     # pulmonary artery pressure mean (mmHg)
+        self.cvp : float = 0.0                          # central venous pressure (mmHg)
+        self.spo2 : float = 0.0                         # arterial oxygen saturation in descending aorta (%)
+        self.spo2_pre : float = 0.0                     # arterial oxygen saturation in ascending aorta (%)
+        self.spo2_ven : float = 0.0                     # venous oxygen saturation in right atrium (%)
+        self.etco2 : float = 0.0                        # end tidal partial pressure of carbon dioxide (kPa)
+        self.temp : float = 0.0                         # blood temperature (dgs C)
+        self.co : float = 0.0                           # cardiac output (l/min)
+        self.ci : float = 0.0                           # cardiac index (l/min/m2)
+        self.lvo : float = 0.0                          # left ventricular output (l/min)
+        self.rvo : float = 0.0                          # right ventricular output (l/min)
+        self.lv_sv : float = 0.0                        # left ventricular stroke volume (ml)
+        self.rv_sv : float = 0.0                        # right ventricular stroke volume (ml)
+        self.ivc_flow : float = 0.0                     # inferior vena cava flow (l/min)
+        self.svc_flow : float = 0.0                     # superior vena cava flow (l/min)
+        self.cor_flow : float = 0.0                     # coronary flow (l/min)
+        self.brain_flow : float = 0.0                   # brain flow (l/min)
+        self.kid_flow : float = 0.0                     # kidney flow (l/min)
+        self.fio2 : float = 0.0                         # inspired fraction of oxygen
+        self.pip : float = 0.0                          # peak inspiratory pressure (cmH2O)
+        self.p_plat : float = 0.0                       # plateau inspiratory pressure (cmH2O)
+        self.peep : float = 0.0                         # positive end expiratory pressure (cmH2O)
+        self.tidal_volume : float = 0.0                 # tidal volume (l)
+        self.ph : float = 0.0                           # arterial ph
+        self.po2 : float = 0.0                          # arterial po2 (kPa)
+        self.pco2 : float = 0.0                         # arterial pco2 (kPa)
+        self.hco3 : float = 0.0                         # arterial bicarbonate concentration (mmol/l)
+        self.be : float = 0.0                           # arterial base excess concentration (mmol/l)
+
+        # signals
+        self.ecg_signal : float = 0.0                   # ecg signal
+        self.abp_signal : float = 0.0                   # abp signal
+        self.pap_signal : float = 0.0                   # pap signal
+        self.cvp_signal : float = 0.0                   # cvp signal
+        self.spo2_pre_signal : float = 0.0              # pulse-oximeter signal
+        self.spo2_signal : float = 0.0                  # pulse-oximeter signal
+        self.resp_signal : float = 0.0                  # respiratory signal
+        self.co2_signal : float = 0.0                   # co2 signal
+
+        # -----------------------------------------------
+        # initialize local properties
+
+        self._heart = None                              # reference to the heart model
+        self._breathing = None                          # reference to the breathing model
+        self._ventilator = None                         # reference to the mechanical ventilator model
+        self._aa = None                                 # reference to the ascending aorta
+        self._ad = None                                 # reference to the descending aorta
+        self._ra = None                                 # reference to the right atrium
+        self._pa = None                                 # reference to the pulmonary artery
+        self._ds = None                                 # reference to the upper airway deadspace
+        self._thorax = None                             # reference to the thorax
+        self._lv_aa = None                              # reference to the aortic valve
+        self._rv_pa = None                              # reference to the pulmonary valve
+        self._ivc_ra = None                             # reference to the inferior cava to right atrium connector
+        self._svc_ra = None                             # reference to the superior cava to right atrium connector
+        self._cor_ra = None                             # reference to the coronaries to right atrium connector
+        self._aa_br = None                              # reference to the ascending aorta to brain connector
+        self._ad_kid = None                             # reference to the descending aorta to kidneys connector
+
+        self._temp_aa_pres_max = -1000.0
+        self._temp_aa_pres_min = 1000.0
+        self._temp_ad_pres_max = -1000.0
+        self._temp_ad_pres_min = 1000.0
+        self._temp_ra_pres_max = -1000.0
+        self._temp_ra_pres_min = 1000.0
+        self._temp_pa_pres_max = -1000.0
+        self._temp_pa_pres_min = 1000.0
+        self._lvo_counter = 0.0
+        self._rvo_counter = 0.0
+        self._cor_flow_counter = 0.0
+        self._ivc_flow_counter = 0.0
+        self._svc_flow_counter = 0.0
+        self._brain_flow_counter = 0.0
+        self._kid_flow_counter = 0.0
+        self._hr_list = []
+        self._rr_list = []
+        self._spo2_list = []
+        self._spo2_pre_list = []
+        self._spo2_ven_list = []
+        self._rr_avg_counter = 0.0
+        self._sat_avg_counter = 0.0
+        self._sat_sampling_counter = 0.0
+        self._beats_counter = 0
+        self._beats_time = 0.0
+
+
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # get the references to the models (for performance reasons)
+        self._heart = self._model_engine.models.get(self.heart, None)
+        self._ra = self._model_engine.models.get(self.right_atrium, None)
+        self._breathing = self._model_engine.models.get(self.breathing, None)
+        self._ventilator = self._model_engine.models.get(self.ventilator, None)
+        self._ds = self._model_engine.models.get(self.deadspace, None)
+        self._thorax = self._model_engine.models.get(self.thorax, None)
+        self._aa = self._model_engine.models.get(self.ascending_aorta, None)
+        self._ad = self._model_engine.models.get(self.descending_aorta, None)
+        self._pa = self._model_engine.models.get(self.pulm_artery, None)
+        self._lv_aa = self._model_engine.models.get(self.aortic_valve, None)
+        self._rv_pa = self._model_engine.models.get(self.pulm_valve, None)
+        self._ivc_ra = self._model_engine.models.get(self.ivc_ra, None)
+        self._svc_ra = self._model_engine.models.get(self.svc_ra, None)
+        self._cor_ra = self._model_engine.models.get(self.cor_ra, None)
+        self._aa_br = self._model_engine.models.get(self.aa_brain, None)
+        self._ad_kid = self._model_engine.models.get(self.ad_kid, None)
+
+
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # collect the pressures
+        self.collect_pressures()
+
+        # collect the flows
+        self.collect_blood_flows()
+
+        # collect the signals
+        self.collect_signals()
+
+        # collect temperature
+        self.temp = self._aa.temp
+
+        # collect end tidal co2
+        self.etco2 = self._ventilator.etco2
+
+        
+
+
+
+    def collect_pressures(self) -> None:
+        pass
+
+    def collect_blood_flows(self) -> None:
+        pass
+
+    def collect_signals(self) -> None:
+        pass
+
+    
+
+
 #----------------------------------------------------------------------------------------------------------------------------
 # custom classes from explain users (not verified by the explain team)
 class ExampleCustomModel(BaseModelClass):

@@ -1450,6 +1450,12 @@
             "vent_pres_peep": 5.0,
             "vent_insp_time": 1.0,
             "vent_fio2": 0.21
+        },
+        "Monitor": {
+            "name": "Monitor",
+            "model_type": "Monitor",
+            "description": "patient monitor model (Philips intellivue",
+            "is_enabled": true
         }
     },
     "model_groups": {
