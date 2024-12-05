@@ -4700,7 +4700,6 @@ class Monitor(BaseModelClass):
         self._beats_time = 0.0
 
 
-
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
         for key, value in args.items():
@@ -4724,8 +4723,6 @@ class Monitor(BaseModelClass):
         self._aa_br = self._model_engine.models.get(self.aa_brain, None)
         self._ad_kid = self._model_engine.models.get(self.ad_kid, None)
 
-
-
         # flag that the model is initialized
         self._is_initialized = True
 
@@ -4745,18 +4742,139 @@ class Monitor(BaseModelClass):
         # collect end tidal co2
         self.etco2 = self._ventilator.etco2
 
-        
+        # Determine the beginning of the cardiac cycle
+        if self._heart.ncc_ventricular == 1:
+            # Heart rate determination
+            self._hr_list.append(self._heart.heart_rate)
+            self.heart_rate = sum(self._hr_list) / len(self._hr_list)
 
+            if len(self._hr_list) > self.hr_avg_beats:
+                self._hr_list.pop(0)
+
+            # Add 1 beat
+            self._beats_counter += 1
+
+            # Blood pressures
+            if self._aa:
+                self.abp_pre_syst = self._temp_aa_pres_max
+                self.abp_pre_diast = self._temp_aa_pres_min
+                self.abp_pre_mean = (2 * self._temp_aa_pres_min + self._temp_aa_pres_max) / 3.0
+                self._temp_aa_pres_max = -1000.0
+                self._temp_aa_pres_min = 1000.0
+
+            if self._ad:
+                self.abp_syst = self._temp_ad_pres_max
+                self.abp_diast = self._temp_ad_pres_min
+                self.abp_mean = (2 * self._temp_ad_pres_min + self._temp_ad_pres_max) / 3.0
+                self._temp_ad_pres_max = -1000.0
+                self._temp_ad_pres_min = 1000.0
+
+            if self._ra:
+                self.cvp = (2 * self._temp_ra_pres_min + self._temp_ra_pres_max) / 3.0
+                self._temp_ra_pres_max = -1000.0
+                self._temp_ra_pres_min = 1000.0
+
+            if self._pa:
+                self.pap_syst = self._temp_pa_pres_max
+                self.pap_diast = self._temp_pa_pres_min
+                self.pap_mean = (2 * self._temp_pa_pres_min + self._temp_pa_pres_max) / 3.0
+                self._temp_pa_pres_max = -1000.0
+                self._temp_pa_pres_min = 1000.0
+
+        # Cardiac outputs
+        if self._beats_counter > self.hr_avg_beats:
+            if self._lv_aa:
+                self.lvo = (self._lvo_counter / self._beats_time) * 60.0
+                self._lvo_counter = 0.0
+
+            if self._rv_pa:
+                self.rvo = (self._rvo_counter / self._beats_time) * 60.0
+                self._rvo_counter = 0.0
+
+            if self._ivc_ra:
+                self.ivc_flow = (self._ivc_flow_counter / self._beats_time) * 60.0
+                self._ivc_flow_counter = 0.0
+
+            if self._svc_ra:
+                self.svc_flow = (self._svc_flow_counter / self._beats_time) * 60.0
+                self._svc_flow_counter = 0.0
+
+            if self._cor_ra:
+                self.cor_flow = (self._cor_flow_counter / self._beats_time) * 60.0
+                self._cor_flow_counter = 0.0
+
+            if self._aa_br:
+                self.brain_flow = (self._brain_flow_counter / self._beats_time) * 60.0
+                self._brain_flow_counter = 0.0
+
+            if self._ad_kid:
+                self.kid_flow = (self._kid_flow_counter / self._beats_time) * 60.0
+                self._kid_flow_counter = 0.0
+
+            # Reset the counters
+            self._beats_counter = 0
+            self._beats_time = 0.0
+
+        self._beats_time += self._t
+
+        # Respiratory rate (rolling average)
+        self._rr_avg_counter += self._t
+        if self._rr_avg_counter > self.rr_avg_time:
+            self._rr_list.pop(0)
+
+        if self._breathing.ncc_insp == 1:
+            self._rr_list.append(self._breathing.resp_rate)
+            self.resp_rate = sum(self._rr_list) / len(self._rr_list)
+
+        # Saturation
+        if self._sat_avg_counter > self.sat_avg_time:
+            self._sat_avg_counter = 0.0
+            self._spo2_list.pop(0)
+            self._spo2_pre_list.pop(0)
+            self._spo2_ven_list.pop(0)
+
+        if self._sat_sampling_counter > self.sat_sampling_interval:
+            self._sat_sampling_counter = 0.0
+            self._spo2_list.append(self._ad.so2)
+            self._spo2_pre_list.append(self._aa.so2)
+            self._spo2_ven_list.append(self._ra.so2)
+
+            self.spo2 = sum(self._spo2_list) / len(self._spo2_list)
+            self.spo2_pre = sum(self._spo2_pre_list) / len(self._spo2_pre_list)
+            self.spo2_ven = sum(self._spo2_ven_list) / len(self._spo2_ven_list)
+
+        self._sat_avg_counter += self._t
+        self._sat_sampling_counter += self._t
 
 
     def collect_pressures(self) -> None:
-        pass
+        self._temp_aa_pres_max = (max(self._temp_aa_pres_max, self._aa.pres_in) if self._aa else -1000)
+        self._temp_aa_pres_min = (min(self._temp_aa_pres_min, self._aa.pres_in) if self._aa else 1000)
+        self._temp_ad_pres_max = (max(self._temp_ad_pres_max, self._ad.pres_in) if self._ad else -1000)
+        self._temp_ad_pres_min = (min(self._temp_ad_pres_min, self._ad.pres_in) if self._ad else 1000)
+        self._temp_ra_pres_max = (max(self._temp_ra_pres_max, self._ra.pres_in) if self._ra else -1000)
+        self._temp_ra_pres_min = (min(self._temp_ra_pres_min, self._ra.pres_in) if self._ra else 1000)
+        self._temp_pa_pres_max = (max(self._temp_pa_pres_max, self._pa.pres_in) if self._pa else -1000)
+        self._temp_pa_pres_min = (min(self._temp_pa_pres_min, self._pa.pres_in) if self._pa else 1000)
 
     def collect_blood_flows(self) -> None:
-        pass
+        self._lvo_counter += self._lv_aa.flow * self._t if self._lv_aa else 0.0
+        self._rvo_counter += self._rv_pa.flow * self._t if self._rv_pa else 0.0
+        self._cor_flow_counter += self._cor_ra.flow * self._t if self._cor_ra else 0.0
+        self._ivc_flow_counter += self._ivc_ra.flow * self._t if self._ivc_ra else 0.0
+        self._svc_flow_counter += self._svc_ra.flow * self._t if self._svc_ra else 0.0
+        self._brain_flow_counter += self._aa_br.flow * self._t if self._aa_br else 0.0
+        self._kid_flow_counter += self._ad_kid.flow * self._t if self._ad_kid else 0.0
 
     def collect_signals(self) -> None:
-        pass
+        self.ecg_signal = self._heart.ecg_signal if self._heart else 0.0
+        self.resp_signal = self._thorax.vol if self._thorax else 0.0
+        self.spo2_pre_signal = self._aa.pres_in if self._aa else 0.0
+        self.spo2_signal = self._ad.pres_in if self._ad else 0.0
+        self.abp_signal = self._ad.pres_in if self._ad else 0.0
+        self.pap_signal = self._pa.pres_in if self._pa else 0.0
+        self.cvp_signal = self._ra.pres_in if self._ra else 0.0
+        self.co2_signal = self._ventilator.co2 if self._ventilator else 0.0
 
     
 
