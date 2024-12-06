@@ -1901,6 +1901,7 @@ class Heart(BaseModelClass):
         self.ncc_atrial: int = 0                        # atrial contraction counter
         self.cardiac_cycle_running: int = 0             # signal whether or not the cardiac cycle is running (0 = not, 1 = cardiac cycle running)
         self.cardiac_cycle_time: float = 0.353          # cardiac cycle time (s)
+        self.ecg_signal:float = 0.0                     # ECG signal (mV)
 
         # -----------------------------------------------
         # local properties
