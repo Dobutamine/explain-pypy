@@ -4877,8 +4877,6 @@ class Monitor(BaseModelClass):
         self.cvp_signal = self._ra.pres_in if self._ra else 0.0
         self.co2_signal = self._ventilator.co2 if self._ventilator else 0.0
 
-    
-
 
 #----------------------------------------------------------------------------------------------------------------------------
 # custom classes from explain users (not verified by the explain team)
