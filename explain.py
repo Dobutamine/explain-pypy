@@ -30,8 +30,7 @@ import numpy as np                                      # used by the plotter ob
 #----------------------------------------------------------------------------------------------------------------------------
 # explain core models
 class BaseModelClass():
-    # This base model class is the blueprint for all the model objects (classes).
-    # It incorporates the properties and methods which all model objects implement
+    # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
         # initialize independent properties which all models implement
         self.name: str = name                           # name of the model object
@@ -45,7 +44,7 @@ class BaseModelClass():
         self._is_initialized: bool = False              # flag whether the model is initialized or not
 
     def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model as provided by args dictionary
+        # set the properties of this model as provided by the args dictionary
         for key, value in args.items():
             setattr(self, key, value)
         
@@ -4876,7 +4875,6 @@ class Monitor(BaseModelClass):
         self.pap_signal = self._pa.pres_in if self._pa else 0.0
         self.cvp_signal = self._ra.pres_in if self._ra else 0.0
         self.co2_signal = self._ventilator.co2 if self._ventilator else 0.0
-
 
 #----------------------------------------------------------------------------------------------------------------------------
 # custom classes from explain users (not verified by the explain team)
