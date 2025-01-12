@@ -1003,8 +1003,8 @@
             "description": "ans effector pathway on minute volume",
             "is_enabled": true,
             "target": "Breathing.mv_ans_factor",
-            "mxe_high": 10,
-            "mxe_low": 0.1,
+            "effect_at_max_firing_rate": 10,
+            "effect_at_min_firing_rate": 0.1,
             "tc": 5
         },
         "VENT_GASIN": {
@@ -1242,7 +1242,8 @@
             "is_enabled": true,
             "breathing_enabled": true,
             "minute_volume_ref": 0.2,
-            "vt_rr_ratio": 0.0001212,
+            "vt_rr_ratio": 0.00012,
+            "rmp_gain_max": 100,
             "ie_ratio": 0.3,
             "resp_rate": 40.0
         },

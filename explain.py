@@ -1791,7 +1791,6 @@ class Container(BaseModelClass):
         self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
         self.vol_extra: float = 0.0                     # additional volume of the container (L)
         self.contained_components: list = 0.0           # list of names of models this Container contains
-        self.act_factor: float = 0.0                    # activation factor which can modify the elastance of the container
         
         # -> unstressed volume factors
         self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
@@ -1844,7 +1843,6 @@ class Container(BaseModelClass):
         # incorporate the other factors
         _el = (
             _el_base
-            + self.act_factor
             + (self.el_base_factor - 1) * _el_base
         )
         _el_k = (
@@ -2242,7 +2240,7 @@ class Breathing(BaseModelClass):
             self.resp_muscle_pressure = 0.0
 
         # transfer the respiratory muscle pressure to the thorax
-        self._model_engine.models["THORAX"].act_factor = (self.resp_muscle_pressure * 100.0)
+        self._model_engine.models["THORAX"].pres_mus = -self.resp_muscle_pressure
 
     def vt_rr_controller(self, _weight):
         # calculate the spontaneous resp rate depending on the target minute volume (from ANS) and the set vt-rr ratio
