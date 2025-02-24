@@ -21,7 +21,7 @@ If you have problems running this code or other questions please contact Tim Ant
 Have fun!
 '''
 #----------------------------------------------------------------------------------------------------------------------------
-# import the dependencies. 
+# import the dependencies!
 import math, random, json                               # general modules used by most objects  
 from time import perf_counter                           # used to generate model performance parameters
 import matplotlib.pyplot as plt                         # used by the plotter object
