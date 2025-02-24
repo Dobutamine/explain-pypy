@@ -1429,7 +1429,11 @@
             "name": "Monitor",
             "model_type": "Monitor",
             "description": "patient monitor model (Philips intellivue)",
-            "is_enabled": true
+            "is_enabled": true,
+            "hvr_avg_beats": 5.0,
+            "rr_avg_time": 20.0,
+            "sat_avg_time": 5.0,
+            "sat_sampling_interval": 1.0
         }
     },
     "model_groups": {
