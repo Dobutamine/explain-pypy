@@ -1428,7 +1428,7 @@
         "Monitor": {
             "name": "Monitor",
             "model_type": "Monitor",
-            "description": "patient monitor model (Philips intellivue",
+            "description": "patient monitor model (Philips intellivue)",
             "is_enabled": true
         }
     },

@@ -2394,7 +2394,7 @@ class Afferent(BaseModelClass):
         self.current_value = getattr(self._input_site, self._input_prop)
         self.firing_rate = self._set_firing_rate
         
-        # flag that the model is initialized
+        # Flag that the model is initialized
         self._is_initialized = True
 
     def calc_model(self) -> None:
@@ -4076,6 +4076,7 @@ class Resuscitation(BaseModelClass):
         self._ventilator.set_fio2(new_fio2)
 
 #----------------------------------------------------------------------------------------------------------------------------
+# explain grouper models
 class Circulation(BaseModelClass):
     '''
     The Circulation class is not a model but houses methods that influence groups of models. In case
@@ -4598,6 +4599,10 @@ class Monitor(BaseModelClass):
         self.svc_ra: str = "SVC_RA"
         self.thorax: str = "THORAX"
         self.deadspace: str = "DS"
+        self.fo: str = "FO"
+        self.da: str = "DA_OUT"
+        self.vsd: str = "VSD"
+        self.ips: str = "IPS"
 
         # -----------------------------------------------
         # initialize dependent properties
@@ -4630,6 +4635,10 @@ class Monitor(BaseModelClass):
         self.cor_flow : float = 0.0                     # coronary flow (l/min)
         self.brain_flow : float = 0.0                   # brain flow (l/min)
         self.kid_flow : float = 0.0                     # kidney flow (l/min)
+        self.da_flow : float  = 0.0                     # ductus arteriosus flow (l/min)
+        self.fo_flow : float   = 0.0                    # foramen ovale flow (l/min)
+        self.vsd_flow : float   = 0.0                   # vsd flow (l/min)
+        self.ips_flow : float   = 0.0                   # ips flow (l/min)
         self.fio2 : float = 0.0                         # inspired fraction of oxygen
         self.pip : float = 0.0                          # peak inspiratory pressure (cmH2O)
         self.p_plat : float = 0.0                       # plateau inspiratory pressure (cmH2O)
@@ -4670,6 +4679,10 @@ class Monitor(BaseModelClass):
         self._cor_ra = None                             # reference to the coronaries to right atrium connector
         self._aa_br = None                              # reference to the ascending aorta to brain connector
         self._ad_kid = None                             # reference to the descending aorta to kidneys connector
+        self._fo = None                                 # reference to the foramen ovale
+        self._da = None                                 # reference to the ductus arteriosus
+        self._vsd = None                                # reference to the ventricular septal defect
+        self._ips = None                                # reference to the intrapulmonary shunt
 
         self._temp_aa_pres_max = -1000.0
         self._temp_aa_pres_min = 1000.0
@@ -4686,6 +4699,10 @@ class Monitor(BaseModelClass):
         self._svc_flow_counter = 0.0
         self._brain_flow_counter = 0.0
         self._kid_flow_counter = 0.0
+        self._da_flow_counter = 0.0
+        self._fo_flow_counter = 0.0
+        self._vsd_flow_counter = 0.0
+        self._ips_flow_counter = 0.0
         self._hr_list = []
         self._rr_list = []
         self._spo2_list = []
@@ -4720,6 +4737,10 @@ class Monitor(BaseModelClass):
         self._cor_ra = self._model_engine.models.get(self.cor_ra, None)
         self._aa_br = self._model_engine.models.get(self.aa_brain, None)
         self._ad_kid = self._model_engine.models.get(self.ad_kid, None)
+        self._da = self._model_engine.models.get(self.da, None)
+        self._fo = self._model_engine.models.get(self.fo, None)
+        self._vsd = self._model_engine.models.get(self.vsd, None)
+        self._ips = self._model_engine.models.get(self.ips, None)
 
         # flag that the model is initialized
         self._is_initialized = True
@@ -4809,6 +4830,22 @@ class Monitor(BaseModelClass):
                 self.kid_flow = (self._kid_flow_counter / self._beats_time) * 60.0
                 self._kid_flow_counter = 0.0
 
+            if self._da:
+                self.da_flow = (self._da_flow_counter / self._beats_time) * 60.0
+                self._da_flow_counter = 0.0
+
+            if self._fo:
+                self.fo_flow = (self._fo_flow_counter / self._beats_time) * 60.0
+                self._fo_flow_counter = 0.0
+
+            if self._vsd:
+                self.vsd_flow = (self._vsd_flow_counter / self._beats_time) * 60.0
+                self._vsd_flow_counter = 0.0
+
+            if self._ips:
+                self.ips_flow = (self._ips_flow_counter / self._beats_time) * 60.0
+                self._ips_flow_counter = 0.0
+
             # Reset the counters
             self._beats_counter = 0
             self._beats_time = 0.0
@@ -4817,7 +4854,7 @@ class Monitor(BaseModelClass):
 
         # Respiratory rate (rolling average)
         self._rr_avg_counter += self._t
-        if self._rr_avg_counter > self.rr_avg_time:
+        if self._rr_avg_counter > self.rr_avg_time and len(self._rr_list) > 0:
             self._rr_list.pop(0)
 
         if self._breathing.ncc_insp == 1:
@@ -4863,6 +4900,10 @@ class Monitor(BaseModelClass):
         self._svc_flow_counter += self._svc_ra.flow * self._t if self._svc_ra else 0.0
         self._brain_flow_counter += self._aa_br.flow * self._t if self._aa_br else 0.0
         self._kid_flow_counter += self._ad_kid.flow * self._t if self._ad_kid else 0.0
+        self._fo_flow_counter += self._fo.flow * self._t if self.fo else 0.0
+        self._da_flow_counter += self._da.flow * self._t if self.da else 0.0
+        self._vsd_flow_counter += self._vsd.flow * self._t if self.vsd else 0.0
+        self._ips_flow_counter += self._ips.flow * self._t if self.ips else 0.0
 
     def collect_signals(self) -> None:
         self.ecg_signal = self._heart.ecg_signal if self._heart else 0.0
