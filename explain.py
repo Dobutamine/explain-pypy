@@ -4714,7 +4714,6 @@ class Monitor(BaseModelClass):
         self._beats_counter = 0
         self._beats_time = 0.0
 
-
     def init_model(self, **args: dict[str, any]) -> None:
         # set the properties of this model
         for key, value in args.items():
@@ -4880,7 +4879,6 @@ class Monitor(BaseModelClass):
 
         self._sat_avg_counter += self._t
         self._sat_sampling_counter += self._t
-
 
     def collect_pressures(self) -> None:
         self._temp_aa_pres_max = (max(self._temp_aa_pres_max, self._aa.pres_in) if self._aa else -1000)
