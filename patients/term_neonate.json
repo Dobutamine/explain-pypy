@@ -96,8 +96,28 @@
             "description": "capacitance model of the pulmonary artery",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.010088977242620525,
+            "vol": 0.01,
             "u_vol": 0.0022,
+            "el_base": 6000,
+            "el_k": 0
+        },
+        "PAAL": {
+            "name": "PAAL",
+            "description": "capacitance model of the pulmonary arterioles of the left lung",
+            "model_type": "BloodCapacitance",
+            "is_enabled": true,
+            "vol": 0.005,
+            "u_vol": 0.001,
+            "el_base": 6000,
+            "el_k": 0
+        },
+        "PAAR": {
+            "name": "PAAR",
+            "description": "capacitance model of the pulmonary arterioles of the right lung",
+            "model_type": "BloodCapacitance",
+            "is_enabled": true,
+            "vol": 0.005,
+            "u_vol": 0.001,
             "el_base": 6000,
             "el_k": 0
         },
@@ -595,26 +615,50 @@
             "r_for": 167,
             "r_back": 837
         },
-        "PA_LL": {
-            "name": "PA_LL",
+        "PA_PAAL": {
+            "name": "PA_PAAL",
             "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the left lung",
             "model_type": "BloodResistor",
             "is_enabled": true,
             "no_flow": false,
             "no_back_flow": false,
             "comp_from": "PA",
+            "comp_to": "PAAL",
+            "r_for": 2950,
+            "r_back": 2950
+        },
+        "PAAL_LL": {
+            "name": "PAAL_LL",
+            "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the left lung",
+            "model_type": "BloodResistor",
+            "is_enabled": true,
+            "no_flow": false,
+            "no_back_flow": false,
+            "comp_from": "PAAL",
             "comp_to": "LL",
             "r_for": 2950,
             "r_back": 2950
         },
-        "PA_RL": {
-            "name": "PA_RL",
+        "PA_PAAR": {
+            "name": "PA_PAAR",
             "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the right lung",
             "model_type": "BloodResistor",
             "is_enabled": true,
             "no_flow": false,
             "no_back_flow": false,
             "comp_from": "PA",
+            "comp_to": "PAAR",
+            "r_for": 2950,
+            "r_back": 2950
+        },
+        "PAAR_RL": {
+            "name": "PAAR_RL",
+            "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the right lung",
+            "model_type": "BloodResistor",
+            "is_enabled": true,
+            "no_flow": false,
+            "no_back_flow": false,
+            "comp_from": "PAAR",
             "comp_to": "RL",
             "r_for": 2950,
             "r_back": 2950
