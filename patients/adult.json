@@ -680,30 +680,5 @@
             "g_GFR":200,
             "g_MR":1
         }
-    },
-    "model_groups": {
-        "syst_arteries": [],
-        "syst_veins": [],
-        "pulm_arteries": [],
-        "pulm_veins": [],
-        "syst_art_resistors": [],
-        "syst_ven_resistors": [],
-        "pulm_art_resistors": [],
-        "pulm_ven_resistors": [],
-        "pulm_gasexchangers": [],
-        "heart_atria": [],
-        "heart_ventricles": [],
-        "heart_valves": [],
-        "coronaries": [],
-        "pericardium": [],
-        "cor_resistors": [],
-        "capillaries": [],
-        "shunts": [],
-        "thorax": [],
-        "chestwall": [],
-        "dead_space": [],
-        "alveoli": [],
-        "upper_airways": [],
-        "lower_airways": []
     }
 }

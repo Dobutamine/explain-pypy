@@ -236,9 +236,9 @@
             "description": "capacitance model of the blood compartment in the ductus arteriosus",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.0002,
-            "u_vol": 0.0002,
-            "el_base": 23000,
+            "vol": 0.0001,
+            "u_vol": 0.0001,
+            "el_base": 50000,
             "el_k": 1000
         },
         "ECLS_TUBIN": {
@@ -664,8 +664,8 @@
             "no_back_flow": false,
             "comp_from": "AAR",
             "comp_to": "DA",
-            "r_for": 300,
-            "r_back": 300,
+            "r_for": 3000,
+            "r_back": 3000,
             "r_k": 1000.0
         },
         "DA_OUT": {
@@ -677,8 +677,8 @@
             "no_back_flow": false,
             "comp_from": "DA",
             "comp_to": "PA",
-            "r_for": 100000000,
-            "r_back": 100000000,
+            "r_for": 3000,
+            "r_back": 3000,
             "r_k": 1000
         },
         "FO": {
@@ -1165,6 +1165,18 @@
             "av_delay": 0.0005,
             "kn": 0.579
         },
+        "Circulation": {
+            "name": "Circulation",
+            "model_type": "Circulation",
+            "description": "circulation methods",
+            "is_enabled": true
+        },
+        "Shunts": {
+            "name": "Shunts",
+            "model_type": "Shunts",
+            "description": "shunts methods",
+            "is_enabled": true
+        },
         "Blood": {
             "name": "Blood",
             "model_type": "Blood",
@@ -1220,6 +1232,12 @@
             "rmp_gain_max": 100,
             "ie_ratio": 0.3,
             "resp_rate": 40.0
+        },
+        "Respiration": {
+            "name": "Respiration",
+            "model_type": "Respiration",
+            "description": "respiration methods",
+            "is_enabled": true
         },
         "Metabolism": {
             "name": "Metabolism",
@@ -1350,52 +1368,6 @@
             "mat_to2" : 7.0,
             "mat_tco2" : 23.5
         },
-        "Circulation": {
-            "name": "Circulation",
-            "model_type": "Circulation",
-            "description": "circulation methods",
-            "is_enabled": true
-        },
-        "Respiration": {
-            "name": "Respiration",
-            "model_type": "Respiration",
-            "description": "respiration methods",
-            "is_enabled": true,
-            "upper_airways": ["MOUTH_DS"],
-            "dead_space": ["DS"],
-            "thorax": ["THORAX"],
-            "alveolar_spaces": ["ALL", "ALR"],
-            "lower_airways": ["DS_ALL", "DS_ALR"],
-            "gas_exchangers": ["GASEX_LL", "GASEX_RL"],
-            "lung_shunts": ["IPS"]
-        },
-        "Shunts": {
-            "name": "Shunts",
-            "model_type": "Shunts",
-            "description": "shunts methods",
-            "is_enabled": true,
-            "da": "DA",
-            "da_enabled": true,
-            "da_in": "DA_IN",
-            "da_out": "DA_OUT",
-            "da_el": 23000.0,
-            "da_diameter": 0.0,
-            "da_length": 10.0,
-            "da_backflow_factor": 1.0,
-            "da_r_k": 1.0,
-            "fo": "FO",
-            "fo_enabled": true,
-            "fo_diameter": 0.0,
-            "fo_length": 2.0,
-            "fo_backflow_factor": 10.0,
-            "fo_r_k": 1.0,
-            "vsd": "VSD",
-            "vsd_enabled": false,
-            "vsd_diameter": 0.0,
-            "vsd_length": 2.0,
-            "vsd_backflow_factor": 1.0,
-            "vsd_r_k": 1.0
-        },
         "Resuscitation": {
             "name": "Resuscitation",
             "model_type": "Resuscitation",
@@ -1435,32 +1407,5 @@
             "sat_avg_time": 5.0,
             "sat_sampling_interval": 1.0
         }
-    },
-    "model_groups": {
-        "baroreceptor": ["BR_MAP"],
-        "syst_arteries": ["AA", "AAR", "AD"],
-        "syst_veins": ["VLB", "VUB", "IVCI", "SVC"],
-        "pulm_arteries": ["PA"],
-        "pulm_veins": ["PV"],
-        "syst_art_resistors": ["AA_AAR", "AA_RUB", "AA_BR", "AA_COR", "AAR_AD", "DA_IN", "AD_LS", "AD_INT", "AD_KID", "AD_RLB", "UMB_ART"],
-        "syst_ven_resistors": ["LS_VLB", "KID_VLB", "INT_VLB", "RLB_VLB", "VLB_IVCI", "BR_VUB", "RUB_VUB", "VUB_SVC", "UMB_VEN", "IVCI_RA", "SVC_RA"],
-        "pulm_art_resistors": ["PA_LL", "PA_RL"],
-        "pulm_ven_resistors": ["LL_PV", "RL_PV", "PV_LA"],
-        "pulm_gasexchangers": ["GASEX_LL", "GASEX_RL"],
-        "heart_atria": ["LA", "RA"],
-        "heart_ventricles": ["LV", "RV"],
-        "heart_valves": ["LA_LV", "RA_RV", "LV_AA", "RV_PA"],
-        "coronaries": ["COR"],
-        "cor_resistors": ["COR_RA"],
-        "pericardium": ["PC"],
-        "ductus_arteriosus": ["DA"],
-        "ductus_art_resistors": ["DA_OUT"],
-        "capillaries": ["LL", "RL", "INT", "KID", "LS", "RUB", "RLB", "BR"],
-        "shunts": ["FO", "VSD", "IPS"],
-        "thorax": ["THORAX"],
-        "dead_space": ["DS"],
-        "alveoli": ["ALL", "ALR"],
-        "upper_airways": ["MOUTH_DS"],
-        "lower_airways": ["DS_ALL", "DS_ALR"]
     }
 }
