@@ -5567,7 +5567,27 @@ class ModelEngine():
         
         return result
 
-    def write_data_to_csv(self, collected_data, filename: str = "model_data.csv", delimiter: str = ";") -> None:
+    def plot_data_time(self, collected_data, properties, combined=False, sharey=False, ylabel="", autoscale=True, ylowerlim=0, yupperlim=100, fill=True, fill_between=False, zeroline=False, fig_size_x=14, fig_size_y=2,) -> None:
+        self._plotter.draw_time_graph(
+            collected_data,
+            properties,
+            sharey,
+            combined,
+            ylabel,
+            autoscale,
+            ylowerlim,
+            yupperlim,
+            fill,
+            fill_between,
+            zeroline,
+            fig_size_x,
+            fig_size_y,
+        )
+
+    def plot_data_xy(self, collected_data, property_x, property_y, fig_size_x=2, fig_size_y=2,) -> None:
+        self._plotter.draw_xy_graph(collected_data, property_x, property_y, fig_size_x, fig_size_y)
+    
+    def export_data(self, collected_data, filename: str = "model_data.csv", delimiter: str = ";") -> None:
         # check whether the filename has a .csv extension
         if not ".csv" in filename:
             filename = filename + ".csv"
@@ -5591,66 +5611,6 @@ class ModelEngine():
 
         # print a message
         print(f"Data written to {filename} with delimiter '{delimiter}'")
-
-    def plot(self,properties, time_to_calculate=10, combined=True, sharey=True, ylabel="", autoscale=True, ylowerlim=0, yupperlim=100, fill=True, fill_between=False, zeroline=False, sampleinterval=0.005, analyze=True, weight_based=False, fig_size_x=14, fig_size_y=2,) -> None:
-        # first clear the watchllist and this also clears all data
-        self._datacollector.clear_watchlist()
-
-        # set the sample interval
-        self._datacollector.set_sample_interval(sampleinterval)
-
-        # add the property to the watchlist
-        if isinstance(properties, str):
-            properties = [properties]
-
-        # add the properties to the watch_list
-        for prop in properties:
-            self._datacollector.add_to_watchlist(prop)
-
-        # calculate the model steps
-        if analyze:
-            self.analyze(properties=properties, time_to_calculate=time_to_calculate, weight_based=weight_based, sampleinterval=sampleinterval)
-        else:
-            self.calculate(time_to_calculate)
-
-        # get the collected data from the datacollector
-        collected_data = self._datacollector.collected_data
-
-        # plot the properties
-        self._plotter.draw_time_graph(
-            collected_data,
-            properties,
-            sharey,
-            combined,
-            ylabel,
-            autoscale,
-            ylowerlim,
-            yupperlim,
-            fill,
-            fill_between,
-            zeroline,
-            fig_size_x,
-            fig_size_y,
-        )
-
-    def plot_xy(self, property_x, property_y, time_to_calculate=2, sampleinterval=0.0005, fig_size_x=2, fig_size_y=2,) -> None:
-        # first clear the watchllist and this also clears all data
-        self._datacollector.clear_watchlist()
-
-        # set the sample interval
-        self._datacollector.set_sample_interval(sampleinterval)
-
-        # add the properties to the watchlist
-        self._datacollector.add_to_watchlist(property_x)
-        self._datacollector.add_to_watchlist(property_y)
-
-        # calculate the model steps
-        self.calculate(time_to_calculate)
-
-        # get the collected data from the datacollector
-        collected_data = self._datacollector.collected_data
-
-        self._plotter.draw_xy_graph(collected_data, property_x, property_y, fig_size_x, fig_size_y)
 
 #----------------------------------------------------------------------------------------------------------------------------
 # if running from an interactive python environment (e.g. jupyter/vs code) start with the following lines to import the model
