@@ -22,13 +22,13 @@ Have fun!
 '''
 #----------------------------------------------------------------------------------------------------------------------------
 # import the dependencies!
-import math, random, json                               # general modules used by most objects  
+import math, random, json, inspect, csv                          # general modules used by most objects  
 from time import perf_counter                           # used to generate model performance parameters
 import matplotlib.pyplot as plt                         # used by the plotter object
 import numpy as np                                      # used by the plotter object
 
 #----------------------------------------------------------------------------------------------------------------------------
-# explain core component models
+# explain core component models. Core components are the basic building blocks of the explain model.
 class BaseModelClass():
     # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
@@ -2035,9 +2035,8 @@ class Efferent(BaseModelClass):
         self._cum_firing_rate += (new_firing_rate - 0.5) * weight
         self._cum_firing_rate_counter += 1.0
 
-#----------------------------------------------------------------------------------------------------------------------------
-# explain high-level models. High level models use a group a explain model components to model a specific organ or system
-
+#--------------------------------------------------------------------------------------------------------------------------------------
+# explain high-level models. High level models use a group of explain core component models to model a specific organ, system or device
 class Heart(BaseModelClass):
     '''
     The Heart model takes care of the activation of the TimeVaryingElastances which model the heart (LA, RA, LV and RV).
@@ -4623,7 +4622,7 @@ class Endocrine(BaseModelClass):
             self._update_counter = 0.0
 
 #----------------------------------------------------------------------------------------------------------------------------
-# baseline high level explain model
+# baseline explain model
 class ExampleCustomModel(BaseModelClass):
     '''
     The BloodResistor model is a extension of the Resistor model as described in the paper.
@@ -5204,46 +5203,80 @@ class ModelEngine():
         # return boolean success
         return self.initialized
 
-    def calculate(self, time_to_calculate: float = 10.0, performance: bool = True) -> None:
-        # Calculate the number of steps of the model
-        no_of_steps: int = int(time_to_calculate / self.modeling_stepsize)
+    def get_engine_functions(self) -> object:
+        # define a return object
+        result = {}
 
-        # Start the performance counter
-        if performance:
-            perf_start = perf_counter()
+        # get all the functions of the model
+        for func in dir(self):
+            # check whether the function is callable
+            if callable(getattr(self, func)):
+                # add the function to the result list (leave out the local functions)
+                if not func.startswith("_"):
+                    # get the signature of the function
+                    func_signature = inspect.signature(getattr(self, func))
+                    result["ModelEngine." + func] = func_signature
 
-        # Do all model steps
-        for _ in range(no_of_steps):
-            # Execute the model step method of all models
-            for model in self.models.values():
-                if model.is_enabled:
-                    model.step_model()
+        # return the result list
+        return result
+    
+    def get_model_functions(self, model: str) -> object:
+        # define a return object
+        result = {}
 
-            # update the datacollector
-            self._datacollector.collect_data(self.model_time_total)
+        # check whether the model is in the models dictionary
+        try:
+            m = globals()[model]
+        except:
+            result = self._get_model_instance_functions(model)
+            return result
 
-            # run task
-            self._task_scheduler.run_tasks()
+        # get all the functions of the model
+        print(f"{model} is a class and has these functions:")
+        for func in dir(m):
+            # check whether the function is callable
+            if callable(getattr(m, func)):
+                # add the function to the result list (leave out the local functions)
+                if not func.startswith("_"):
+                    # get the signature of the function
+                    func_signature = inspect.signature(getattr(m, func))
+                    result[func] = func_signature
 
-            # Increase the model clock
-            self.model_time_total += self.modeling_stepsize
+        # return the result list
+        return result
+    
+    def _get_model_instance_functions(self, model: str) -> object:
+        # define a return object
+        result = {}
 
-        # Stop the performance counter
-        if performance:
-            # stop the performance counter
-            perf_stop = perf_counter()
+        # check whether the model is in the models dictionary
+        if model in self.models:
+            # get the model object
+            m = self.models[model]
+            print(f"{model} is an instance of the {m.model_type} class and has these functions:")
+            # get all the functions of the model
+            for func in dir(m):
+                # check whether the function is callable
+                if callable(getattr(m, func)):
+                    # add the function to the result list (leave out the local functions)
+                    if not func.startswith("_"):
+                        # get the signature of the function
+                        func_signature = inspect.signature(getattr(m, func))
+                        result[model + "." + func] = func_signature
+        else:
+            print(f"Model {model} not found!")
 
-            # Store the performance metrics
-            run_duration = perf_stop - perf_start
-            step_duration = (run_duration / no_of_steps) * 1000
-
-            # print the performance
-            print(f"Model run in {run_duration:.4f} sec. Taking {no_of_steps} model steps with a step duration of {step_duration:.4f} sec.")
-            print("")
-
-    def call_function(self, function_name: str, args: list = [], print_output = False) -> bool:
-        # reference the function
-        func = getattr(self, function_name)
+        # return the result list
+        return result
+        
+    def call_model_function(self, function_name: str, args: list = [], print_output = False) -> bool:
+        # process the function name. The function name is a string with the format model.function
+        m = function_name.split(".")
+         # reference the function
+        func = getattr(self.models[m[0]], m[1])
+        # make sure the args is a list
+        if not isinstance(args, list):
+            args = [args]
         # check whether the function is callable
         if callable(func):
             # check whether the function has arguments
@@ -5339,6 +5372,43 @@ class ModelEngine():
         # return the return object
         return result
     
+    def calculate(self, time_to_calculate: float = 10.0, performance: bool = True) -> None:
+        # Calculate the number of steps of the model
+        no_of_steps: int = int(time_to_calculate / self.modeling_stepsize)
+
+        # Start the performance counter
+        if performance:
+            perf_start = perf_counter()
+
+        # Do all model steps
+        for _ in range(no_of_steps):
+            # Execute the model step method of all models
+            for model in self.models.values():
+                if model.is_enabled:
+                    model.step_model()
+
+            # update the datacollector
+            self._datacollector.collect_data(self.model_time_total)
+
+            # run task
+            self._task_scheduler.run_tasks()
+
+            # Increase the model clock
+            self.model_time_total += self.modeling_stepsize
+
+        # Stop the performance counter
+        if performance:
+            # stop the performance counter
+            perf_stop = perf_counter()
+
+            # Store the performance metrics
+            run_duration = perf_stop - perf_start
+            step_duration = (run_duration / no_of_steps) * 1000
+
+            # print the performance
+            print(f"Model run in {run_duration:.4f} sec. Taking {no_of_steps} model steps with a step duration of {step_duration:.4f} sec.")
+            print("")
+
     def collect_data(self, properties, time_to_calculate=10, sampleinterval=0.005) -> object:
         # first clear the watchllist and this also clears all data
         self._datacollector.clear_watchlist()
@@ -5363,7 +5433,7 @@ class ModelEngine():
         # return the data
         return collected_data
     
-    def analyze(self, properties, time_to_calculate=10, sampleinterval=0.005, calculate=True, weight_based=False, print_output=False) -> object:
+    def analyze_data(self, collected_data, properties, weight_based=False, sampleinterval=0.05, print_output=False) -> object:
         # define a result object
         result = {}
 
@@ -5372,29 +5442,11 @@ class ModelEngine():
         if weight_based:
             weight = self.weight
 
-        # add the ncc ventricular for correct analysis
-        properties.insert(0, "Heart.ncc_ventricular")
-
         # make sure properties is a list
         if isinstance(properties, str):
             properties = [properties]
 
-        # if calculation is necessary then do it
-        if calculate:
-            # first clear the watchllist and this also clears all data
-            self._datacollector.clear_watchlist()
-
-            # set the sample interval
-            self._datacollector.set_sample_interval(sampleinterval)
-
-            # add the properties to the watch_list
-            for prop in properties:
-                self._datacollector.add_to_watchlist(prop)
-
-            # calculate the model steps
-            self.calculate(time_to_calculate)
-
-        no_dp = len(self._datacollector.collected_data)
+        no_dp = len(collected_data)
         x = np.zeros(no_dp)
         y = []
         heartbeats = 0
@@ -5402,7 +5454,7 @@ class ModelEngine():
         for parameter in enumerate(properties):
             y.append(np.zeros(no_dp))
 
-        for index, t in enumerate(self._datacollector.collected_data):
+        for index, t in enumerate(collected_data):
             x[index] = t["time"]
 
             for idx, parameter in enumerate(properties):
@@ -5514,6 +5566,31 @@ class ModelEngine():
                 print("{:<16}: max {:10} min {:10}".format(parameter, max, min))
         
         return result
+
+    def write_data_to_csv(self, collected_data, filename: str = "model_data.csv", delimiter: str = ";") -> None:
+        # check whether the filename has a .csv extension
+        if not ".csv" in filename:
+            filename = filename + ".csv"
+        # open the file for writing
+        with open(filename, "w", newline="") as csvfile:
+            # create a csv writer object
+            csvwriter = csv.writer(csvfile, delimiter=delimiter)
+
+            # write the header
+            header = []
+            for parameter in collected_data[0].keys():
+                header.append(parameter)
+            csvwriter.writerow(header)
+
+            # write the data
+            for data in collected_data:
+                row = []
+                for parameter in data.keys():
+                    row.append(data[parameter])
+                csvwriter.writerow(row)
+
+        # print a message
+        print(f"Data written to {filename} with delimiter '{delimiter}'")
 
     def plot(self,properties, time_to_calculate=10, combined=True, sharey=True, ylabel="", autoscale=True, ylowerlim=0, yupperlim=100, fill=True, fill_between=False, zeroline=False, sampleinterval=0.005, analyze=True, weight_based=False, fig_size_x=14, fig_size_y=2,) -> None:
         # first clear the watchllist and this also clears all data
