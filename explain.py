@@ -4520,7 +4520,7 @@ class Monitor(BaseModelClass):
         self.co2_signal = self._ventilator.co2 if self._ventilator else 0.0
 
 #----------------------------------------------------------------------------------------------------------------------------
-# non implemented explain high-level models. These models are not implemented yet but are planned to be implemented in the future
+# not implemented explain high-level models. These models are not implemented yet but are planned to be implemented in the future
 class Renal(BaseModelClass):
     '''
     The Renal class is a high level explain model.
