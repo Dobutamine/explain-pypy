@@ -2241,9 +2241,9 @@ class Heart(BaseModelClass):
         else:
             return self.qt_time * 2.449
 
-class Mob(BaseModelClass):
+class Coronaries(BaseModelClass):
     '''
-    The myocardial oxygen balance (Mob) class models the dynamic oxygen use and carbon dioxide production (metabolism) of the heart 
+    The myocardial oxygen balance (Coronaries) class models the dynamic oxygen use and carbon dioxide production (metabolism) of the heart 
     and models the effect on the heart (heartrate and contractility). 
     
     The metabolism of the heart consists of 4 parts. The basal metabolism (bm), the excitation-contraction coupling (ecc), the potential energy (pe) 
@@ -2325,7 +2325,7 @@ class Mob(BaseModelClass):
         for key, value in args.items():
             setattr(self, key, value)
 
-        # store the references to the models the Mob model needs
+        # store the references to the models the Coronaires model needs
         self._aa = self._model_engine.models["AA"]
         self._aa_cor = self._model_engine.models["AA_COR"]
         self._cor = self._model_engine.models["COR"]

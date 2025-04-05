@@ -36,7 +36,7 @@
             "vol": 0.0029,
             "u_vol": 0.000733,
             "el_min": 1137.0,
-            "el_max": 32000.0,
+            "el_max": 27200.0,
             "el_k": 0.0
         },
         "RV": {
@@ -45,9 +45,9 @@
             "model_type": "BloodTimeVaryingElastance",
             "is_enabled": true,
             "vol": 0.0051,
-            "u_vol": 0.00328,
+            "u_vol": 0.004,
             "el_min": 1079,
-            "el_max": 26200,
+            "el_max": 22200,
             "el_k": 0
         },
         "COR": {
@@ -96,9 +96,29 @@
             "description": "capacitance model of the pulmonary artery",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.010088977242620525,
+            "vol": 0.01,
             "u_vol": 0.0022,
             "el_base": 6000,
+            "el_k": 0
+        },
+        "PAAL": {
+            "name": "PAAL",
+            "description": "capacitance model of the pulmonary arterioles of the left lung",
+            "model_type": "BloodCapacitance",
+            "is_enabled": true,
+            "vol": 0.0005,
+            "u_vol": 0.0005,
+            "el_base": 8000,
+            "el_k": 0
+        },
+        "PAAR": {
+            "name": "PAAR",
+            "description": "capacitance model of the pulmonary arterioles of the right lung",
+            "model_type": "BloodCapacitance",
+            "is_enabled": true,
+            "vol": 0.0005,
+            "u_vol": 0.0005,
+            "el_base": 8000,
             "el_k": 0
         },
         "AA": {
@@ -108,7 +128,7 @@
             "is_enabled": true,
             "vol": 0.0059281971406137815,
             "u_vol": 0.0033,
-            "el_base": 26250,
+            "el_base": 21000,
             "el_k": 0
         },
         "AAR": {
@@ -118,7 +138,7 @@
             "is_enabled": true,
             "vol": 0.006128775769877488,
             "u_vol": 0.003501795453394704,
-            "el_base": 26250,
+            "el_base": 21000,
             "el_k": 0
         },
         "AD": {
@@ -128,7 +148,7 @@
             "is_enabled": true,
             "vol": 0.022045886828499398,
             "u_vol": 0.019697599425345207,
-            "el_base": 26250,
+            "el_base": 21000,
             "el_k": 0
         },
         "RLB": {
@@ -206,9 +226,9 @@
             "description": "capacitance model of the extrathoracic venous blood compartment of the lower body",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.08498446520517715,
+            "vol": 0.109,
             "u_vol": 0.083,
-            "el_base": 145.42341325811003,
+            "el_base": 145,
             "el_k": 0
         },
         "SVC": {
@@ -226,9 +246,9 @@
             "description": "capacitance model of the extrathoracic venous blood compartment of the upper body",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.04386921551382912,
+            "vol": 0.050,
             "u_vol": 0.0432,
-            "el_base": 229.0916784203103,
+            "el_base": 229,
             "el_k": 0
         },
         "DA": {
@@ -236,9 +256,9 @@
             "description": "capacitance model of the blood compartment in the ductus arteriosus",
             "model_type": "BloodCapacitance",
             "is_enabled": true,
-            "vol": 0.0001,
-            "u_vol": 0.0001,
-            "el_base": 50000,
+            "vol": 0.0002,
+            "u_vol": 0.0002,
+            "el_base": 500000,
             "el_k": 1000
         },
         "ECLS_TUBIN": {
@@ -595,29 +615,53 @@
             "r_for": 167,
             "r_back": 837
         },
-        "PA_LL": {
-            "name": "PA_LL",
+        "PA_PAAL": {
+            "name": "PA_PAAL",
             "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the left lung",
             "model_type": "BloodResistor",
             "is_enabled": true,
             "no_flow": false,
             "no_back_flow": false,
             "comp_from": "PA",
-            "comp_to": "LL",
-            "r_for": 2950,
-            "r_back": 2950
+            "comp_to": "PAAL",
+            "r_for": 700,
+            "r_back": 700
         },
-        "PA_RL": {
-            "name": "PA_RL",
+        "PAAL_LL": {
+            "name": "PAAL_LL",
+            "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the left lung",
+            "model_type": "BloodResistor",
+            "is_enabled": true,
+            "no_flow": false,
+            "no_back_flow": false,
+            "comp_from": "PAAL",
+            "comp_to": "LL",
+            "r_for": 500,
+            "r_back": 500
+        },
+        "PA_PAAR": {
+            "name": "PA_PAAR",
             "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the right lung",
             "model_type": "BloodResistor",
             "is_enabled": true,
             "no_flow": false,
             "no_back_flow": false,
             "comp_from": "PA",
+            "comp_to": "PAAR",
+            "r_for": 700,
+            "r_back": 700
+        },
+        "PAAR_RL": {
+            "name": "PAAR_RL",
+            "description": "resistor model of the connection between the pulmonary artery and the blood compartment of the right lung",
+            "model_type": "BloodResistor",
+            "is_enabled": true,
+            "no_flow": false,
+            "no_back_flow": false,
+            "comp_from": "PAAR",
             "comp_to": "RL",
-            "r_for": 2950,
-            "r_back": 2950
+            "r_for": 500,
+            "r_back": 500
         },
         "LL_PV": {
             "name": "LL_PV",
@@ -659,13 +703,13 @@
             "name": "DA_IN",
             "description": "resistor model of the connection between the aortic arch and the ductus arteriosus",
             "model_type": "BloodResistor",
-            "is_enabled": true,
-            "no_flow": false,
+            "is_enabled": false,
+            "no_flow": true,
             "no_back_flow": false,
             "comp_from": "AAR",
             "comp_to": "DA",
-            "r_for": 3000,
-            "r_back": 3000,
+            "r_for": 50,
+            "r_back": 50,
             "r_k": 1000.0
         },
         "DA_OUT": {
@@ -677,9 +721,9 @@
             "no_back_flow": false,
             "comp_from": "DA",
             "comp_to": "PA",
-            "r_for": 3000,
-            "r_back": 3000,
-            "r_k": 1000
+            "r_for": 100000000,
+            "r_back": 100000000,
+            "r_k": 1000.0
         },
         "FO": {
             "name": "FO",
@@ -910,10 +954,10 @@
             "model_type": "Container",
             "description": "container model the thoracic rib cage",
             "is_enabled": true,
-            "contained_components": ["ALL", "ALR", "IVCI", "SVC", "PC", "AA", "AAR", "PA", "PV", "LL", "RL"],
-            "vol": 0.24722086254322656,
-            "u_vol": 0.311530303030303,
-            "el_base": 69.81664315937941,
+            "contained_components": ["ALL", "ALR", "IVCI", "SVC", "PC", "AA", "AAR", "PA", "PV", "LL", "RL", "PAAL", "PAAR"],
+            "vol": 0.214,
+            "u_vol": 0.267,
+            "el_base": 70,
             "el_k": 0.0,
             "vol_extra": 0.0
         },
@@ -1163,19 +1207,25 @@
             "qrs_time": 0.075,
             "qt_time": 0.25,
             "av_delay": 0.0005,
-            "kn": 0.579
-        },
-        "Circulation": {
-            "name": "Circulation",
-            "model_type": "Circulation",
-            "description": "circulation methods",
-            "is_enabled": true
-        },
-        "Shunts": {
-            "name": "Shunts",
-            "model_type": "Shunts",
-            "description": "shunts methods",
-            "is_enabled": true
+            "kn": 0.579,
+            "left_atrium": ["LA"],
+            "right_atrium": ["RA"],
+            "left_ventricle": ["LV"],
+            "right_ventricle": ["RV"],
+            "coronaries": ["COR"],
+            "coronary_arteries": ["AA_COR"],
+            "coronary_veins": ["COR_RA"],
+            "pericardium": ["PC"],
+            "aorta_valve": ["LV_AA"],
+            "pulmonary_valve": ["RV_PA"],
+            "mitral_valve": ["LA_LV"],
+            "tricuspid_valve": ["RA_RV"],
+            "aorta_valve_tga": [],
+            "pulmonary_valve_tga": [],
+            "truncus_arteriosus": [],
+            "tapvc": [],
+            "mapca": [],
+            "alcapa": []
         },
         "Blood": {
             "name": "Blood",
@@ -1231,13 +1281,8 @@
             "vt_rr_ratio": 0.00012,
             "rmp_gain_max": 100,
             "ie_ratio": 0.3,
-            "resp_rate": 40.0
-        },
-        "Respiration": {
-            "name": "Respiration",
-            "model_type": "Respiration",
-            "description": "respiration methods",
-            "is_enabled": true
+            "resp_rate": 40.0,
+            "thorax": ["THORAX"]
         },
         "Metabolism": {
             "name": "Metabolism",
@@ -1265,14 +1310,14 @@
             "ans_active": true,
             "pathways": [
                 {
-                "name": "br map",
+                "name": "BR_MAP_EF_HR",
                 "active": true,
                 "sensor": "BR_MAP",
                 "effector": "EF_HR",
                 "effect_weight": 1
                 },
                 {
-                "name": "cr pco2",
+                "name": "CR_PCO2_EF_MV",
                 "active": true,
                 "sensor": "CR_PCO2",
                 "effector": "EF_MV",
@@ -1280,12 +1325,15 @@
                 }
             ]
         },
-        "Mob": {
-            "name": "Mob",
-            "model_type": "Mob",
-            "description": "myocardial oxygen balance model",
+        "Coronaries": {
+            "name": "Coronaries",
+            "model_type": "Coronaries",
+            "description": "coronary perfusion model",
             "is_enabled": true,
             "mob_active": true,
+            "coronaries": ["COR"],
+            "coronary_arteries": ["AA_COR"],
+            "coronary_veins": ["COR_RA"],
             "ecc_ref": 0.00000301,
             "pva_ref": 0.00143245,
             "pe_ref": 0,
@@ -1301,6 +1349,14 @@
             "model_type": "Ventilator",
             "description": "mechanical ventilator model",
             "is_enabled": false,
+            "vent_gas_in": ["VENT_GASIN"],
+            "vent_gas_circuit": ["VENT_GASCIRCUIT"],
+            "vent_gas_out": ["VENT_GASOUT"],
+            "vent_insp_valve": ["VENT_INSP_VALVE"],
+            "vent_et_tube": ["VENT_ETTUBE"],
+            "vent_exp_valve": ["VENT_EXP_VALVE"],
+            "upper_airway": ["MOUTH_DS"],
+            "breathing_model": ["Breathing"],
             "pres_atm": 760,
             "fio2": 0.205,
             "humidity": 1.0,
@@ -1325,6 +1381,21 @@
             "model_type": "Ecls",
             "description": "ecls system model",
             "is_enabled": false,
+            "ecls_blood_tubing_in": ["ECLS_TUBIN"],
+            "ecls_blood_pump": ["ECLS_PUMP"],
+            "ecls_blood_oxy": ["ECLS_OXY"],
+            "ecls_blood_tubing_out": ["ECLS_TUBOUT"],
+            "ecls_blood_drainage": ["ECLS_DRAINAGE"],
+            "ecls_blood_tubin_pump": ["ECLS_TUBIN_PUMP"],
+            "ecls_blood_pump_oxy": ["ECLS_PUMP_OXY"],
+            "ecls_blood_oxy_tubout": ["ECLS_OXY_TUBOUT"],
+            "ecls_blood_return": ["ECLS_RETURN"],
+            "ecls_gas_in": ["ECLS_GASIN"],
+            "ecls_gas_oxy": ["ECLS_GASOXY"],
+            "ecls_gas_out": ["ECLS_GASOUT"],
+            "ecls_gas_in_oxy": ["ECLS_GASIN_OXY"],
+            "ecls_oxy_gas_out": ["ECLS_OXY_GASOUT"],
+            "ecls_gasex": ["ECLS_GASEX"],
             "pres_atm": 760.0,                                        
             "tubing_diameter": 0.25, 
             "tubing_elastance": 11600,
@@ -1352,6 +1423,10 @@
             "model_type": "Placenta",
             "description": "Placenta model",
             "is_enabled": false,
+            "fetal_placenta": ["PLF"],
+            "maternal_placenta": ["PLM"],
+            "umb_arteries": ["UMB_ART"],
+            "umb_vein": ["UMB_VEN"],
             "umb_clamped": true,
             "umb_art_diameter": 0.005,
             "umb_art_length": 0.5,
@@ -1368,11 +1443,74 @@
             "mat_to2" : 7.0,
             "mat_tco2" : 23.5
         },
+        "Circulation": {
+            "name": "Circulation",
+            "model_type": "Circulation",
+            "description": "high level circulation model",
+            "is_enabled": true,       
+            "syst_art_capacitances": ["AA", "AAR", "AD"],
+            "syst_art_resistors": ["AA_AAR", "AAR_AD", "AD_LS", "AD_INT", "AD_KID", "AD_RLB", "AA_BR", "AA_RUB"],
+            "syst_ven_capacitances": ["VLB", "IVCI", "VUB", "SVC"],
+            "syst_ven_resistors": ["LS_VLB", "INT_VLB", "KID_VLB", "VLB_IVCI", "IVCI_RA", "RLB_VLB", "BR_VUB", "RUB_VUB", "VUB_SVC", "SVC_RA"],
+            "pulm_art_capacitances": ["PA", "PAAL", "PAAR"],
+            "pulm_art_resistors": ["PA_PAAL", "PA_PAAR", "PAAL_LL", "PAAR_RL"],
+            "pulm_ven_capacitances": ["PV"],
+            "pulm_ven_resistors": ["PV_LA"],
+            "cap_capacitances": ["BR", "RUB", "LS", "INT", "KID", "RLB"]
+        },
+        "Respiration": {
+            "name": "Respiration",
+            "model_type": "Respiration",
+            "description": "high level respiration model",
+            "is_enabled": true,
+            "upper_airways": ["MOUTH_DS"],
+            "lower_airways_left": ["DS_ALL"],
+            "lower_airways_right": ["DS_ALR"],
+            "dead_space": ["DS"],
+            "thorax": ["THORAX"],
+            "pleural_space_left": [],
+            "pleural_space_right": [],
+            "lungs": ["ALL", "ALR"],
+            "left_lung": ["ALL"],
+            "right_lung": ["ALR"],
+            "gas_exchanger_left_lung": ["GASEX_LL"],
+            "gas_exchanger_right_lung": ["GASEX_RL"],
+            "intrapulmonary_shunt": ["IPS"]
+        },
+        "Shunts": {
+            "name": "Shunts",
+            "model_type": "Shunts",
+            "description": "shunts methods",
+            "is_enabled": true,
+            "da": "DA",
+            "da_in": "DA_IN",
+            "da_out": "DA_OUT",
+            "fo": "FO",
+            "vsd": "VSD",
+            "da_enabled": true,
+            "fo_enabled": true,
+            "vsd_enabled": false,
+            "da_el": 50000.0,
+            "da_diameter": 0.0,
+            "da_length": 10.0,
+            "da_backflow_factor": 1.0,
+            "da_r_k": 1.0,
+            "fo_diameter": 0.0,
+            "fo_length": 2.0,
+            "fo_backflow_factor": 10.0,
+            "fo_r_k": 1.0,
+            "vsd_diameter": 0.0,
+            "vsd_length": 2.0,
+            "vsd_backflow_factor": 1.0,
+            "vsd_r_k": 1.0
+        },
         "Resuscitation": {
             "name": "Resuscitation",
             "model_type": "Resuscitation",
             "description": "Resuscitation model",
             "is_enabled": true,
+            "ventilator_model": ["Ventilator"],
+            "breathing_model": ["Breathing"],
             "chest_comp_freq": 100.0,
             "chest_comp_max_pres": 60.0,
             "chest_comp_targets": {
@@ -1402,7 +1540,15 @@
             "model_type": "Monitor",
             "description": "patient monitor model (Philips intellivue)",
             "is_enabled": true,
-            "hvr_avg_beats": 5.0,
+            "heart": ["Heart"],
+            "circulation": ["Circulation"],
+            "coronaries": ["Coronaries"],
+            "shunts": ["Shunts"],
+            "ascending_aorta": ["AA"],
+            "descending_aorta": ["DA"],
+            "pulmonary_artery": ["PA"],
+            "respiration": ["Respiration"],
+            "ventilator": ["Ventilator"],
             "rr_avg_time": 20.0,
             "sat_avg_time": 5.0,
             "sat_sampling_interval": 1.0
