@@ -22,6 +22,7 @@ Have fun!
 '''
 #----------------------------------------------------------------------------------------------------------------------------
 # import the dependencies!
+from abc import ABC, abstractmethod
 import math, random, json, inspect, csv                          # general modules used by most objects  
 from time import perf_counter                           # used to generate model performance parameters
 import matplotlib.pyplot as plt                         # used by the plotter object
@@ -29,7 +30,7 @@ import numpy as np                                      # used by the plotter ob
 
 #----------------------------------------------------------------------------------------------------------------------------
 # explain core component models. Core components are the basic building blocks of the explain model.
-class BaseModelClass():
+class BaseModelClass(ABC):
     # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
         # initialize independent properties which all models implement
@@ -56,8 +57,9 @@ class BaseModelClass():
         if self.is_enabled and self._is_initialized:
             self.calc_model()
     
+    @abstractmethod
     def calc_model(self) -> None:
-        # this method is overriden by almost all model classes as this is the place where model calculations take place
+        # this method must be overriden by all model classes as this is the place where model calculations take place
         pass
 
 class Blood(BaseModelClass):
