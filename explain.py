@@ -24,8 +24,8 @@ Have fun!
 # import the dependencies!
 import math, random, json                               # general modules used by most objects  
 from time import perf_counter                           # used to generate model performance parameters
-import matplotlib.pyplot as plt                         # used by the plotter object
-import numpy as np                                      # used by the plotter object
+import matplotlib.pyplot as plt                         # type: ignore # used by the plotter object
+import numpy as np                                      # type: ignore # used by the plotter object
 
 #----------------------------------------------------------------------------------------------------------------------------
 # explain core models
@@ -152,6 +152,7 @@ class Blood(BaseModelClass):
         self._ascending_aorta = self._model_engine.models["AA"]
         self._descending_aorta = self._model_engine.models["AD"]
         self._right_atrium = self._model_engine.models["RA"]
+        self._brain = self._model_engine.models["BR"]
 
         # copy the initial arterial solutes
         self.art_solutes = {**self.solutes}
@@ -198,6 +199,8 @@ class Blood(BaseModelClass):
                 "be": self._right_atrium.be,
                 "so2": self._right_atrium.so2
             }
+
+            self.calc_blood_composition(self._brain)
 
             # arterial solute concentrations
             self.art_solutes = {**self._descending_aorta.solutes}
@@ -737,12 +740,14 @@ class BloodResistor(BaseModelClass):
         self.r_mob_factor: float = 1.0                  # factor of the myocardial oxygen balance model influence on the resistance
         self.r_ans_factor: float = 1.0                  # factor of the autonomic nervous system model influence on the resistance
         self.r_drug_factor: float = 1.0                 # factor of the drug model influence on the resistance
+        self.r_ca_factor: float = 0.5                   # factor of the autoregulation model on the resistance 
 
         self.r_k_factor: float = 1.0                    # factor changing the non-linear part of the resistance
         self.r_k_scaling_factor: float = 1.0            # factor for scaling the non-linear part of the resistance
         self.r_k_ans_factor: float = 1.0                # factor of the autonomic nervous system model on the non-linear part of the resistance
         self.r_k_drug_factor: float = 1.0               # factor of the drug model on the non-linear part of the resistance
 
+        self._r_for: float = 1.0
         # -----------------------------------------------
         # initialize dependent properties
         self.flow: float = 0.0                          # flow f(t) (L/s)
@@ -779,12 +784,13 @@ class BloodResistor(BaseModelClass):
         _r_k_base = self.r_k * self.r_scaling_factor
 
         # incorporate all factors influencing this resistor
-        _r_for = (
+        self._r_for = (
             _r_for_base
             + (self.r_factor - 1) * _r_for_base
             + ((self.r_ans_factor - 1) * _r_for_base) * self.ans_activity_factor
             + (self.r_mob_factor - 1) * _r_for_base
             + (self.r_drug_factor - 1) * _r_for_base
+            + (self.r_ca_factor - 0.5)* _r_for_base
         )
 
         _r_back = (
@@ -804,7 +810,7 @@ class BloodResistor(BaseModelClass):
         )
 
         # make the resistances flow dependent
-        _r_for += _r_k * self.flow * self.flow
+        self._r_for += _r_k * self.flow * self.flow
         _r_back += _r_k * self.flow * self.flow
 
         # reset the current flow as a new value is coming
@@ -816,7 +822,7 @@ class BloodResistor(BaseModelClass):
         
         # calculate the forward flow between two volume containing blood capacitances or blood time varying elastances
         if (_p1_t >= _p2_t):
-            self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / _r_for      # flow L/s
+            self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / self._r_for      # flow L/s
             # update the volumes of the connected components
             vol_not_removed = self._comp_from.volume_out(self.flow * self._t)
             self._comp_to.volume_in((self.flow * self._t) - vol_not_removed, self._comp_from)
@@ -2097,14 +2103,14 @@ class Breathing(BaseModelClass):
         self.vt_rr_ratio_factor: float = 1.0                # factor influencing the ratio between the tidal volume and respiratory rate
         self.vt_rr_ratio_scaling_factor: float = 1.0        # scaling factor of the ratio between the tidal volume and respiratory rate 
         self.rmp_gain_max: float = 50.0                     # maximum elastance change (mmHg/L)
-        self.ie_ratio: float = 0.3                          # ratio of the inspiratory and expiratory time
+        self.ie_ratio: float = 0.4                          # ratio of the inspiratory and expiratory time
         self.mv_ans_factor: float = 1.0                     # factor influencing the minute volume as set by the autonomic nervous system
         self.ans_activity_factor: float = 1.0               # global factor of the autonomic nervous system activity
 
         # -----------------------------------------------
         # initialize dependent properties
         self.target_minute_volume: float = 0.0              # target minute volume as set by the autonomic nervous system (L/min/kg)
-        self.resp_rate: float = 36.0                        # calculated respiratory rate (breaths/min)
+        self.resp_rate: float = 90.0                        # calculated respiratory rate (breaths/min)
         self.target_tidal_volume: float = 0,0               # calculated target tidal volume (L)
         self.minute_volume: float = 0.0                     # minute volume (L/min)
         self.exp_tidal_volume: float = 0.0                  # expiratory tidal volume (L)
@@ -2244,7 +2250,7 @@ class Breathing(BaseModelClass):
 
     def vt_rr_controller(self, _weight):
         # calculate the spontaneous resp rate depending on the target minute volume (from ANS) and the set vt-rr ratio
-        self.resp_rate = math.sqrt(self.target_minute_volume / (self.vt_rr_ratio * self.vt_rr_ratio_factor * self.vt_rr_ratio_scaling_factor * _weight))
+        self.resp_rate = 90.0 # math.sqrt(self.target_minute_volume / (self.vt_rr_ratio * self.vt_rr_ratio_factor * self.vt_rr_ratio_scaling_factor * _weight))
 
         # calculate the target tidal volume depending on the target resp rate and target minute volume (from ANS)
         if self.resp_rate > 0:
@@ -4075,6 +4081,174 @@ class Resuscitation(BaseModelClass):
     def set_fio2(self, new_fio2):
         self._ventilator.set_fio2(new_fio2)
 
+# custom classes from explain users (not verified by the explain team)
+class CA(BaseModelClass):
+    
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # initialize independent properties which will be set when the init_model method is called
+        self.input: str = ""                            # name of the input using dot notation (e.g. AA.po2)    
+        self.co2: str = ""
+        self.min_value: float = 0.0                     # minimum of the Monitor.abp_mean (LLA) (firing rate is 0.0)
+        self.set_value: float = 0.0                     # setpoint of the AA.pressure  (firing rate is 0.5)
+        self.max_value: float = 0.0                     # maximum of the Monitor.abp_mean (ULA) (firing rate is 1.0)
+        self.time_constant: float = 1.0                 # time constant of the resistance rate change (s)
+        #self.mean_br: str = ""
+        self.co2: str = ""                              #                      
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.input_value: float = 0.0                   # input value
+        self.co2_value: float = 0.0
+        self.resistance_rate: float = 0.0               # normalized resistance rate (0 - 1)
+        self._activation: float = 0.0                   # 
+        self.mean_br_value: float = 0.0
+        self.cpp: float = 0.0
+        # -----------------------------------------------
+    
+        # local properties
+        self._update_interval: float = 0.015             # update interval of the receptor (s)
+        self._update_counter: float = 0.0                # counter of the update interval (s)
+        self._max_resistance_rate: float = 1.0           # maximum normalized firing rate 1.0
+        self._set_resistance_rate: float = 0.5           # setpoint normalized firing rate 0.5model = ModelEngine("patients/term_neonate.json"
+
+        self._input_prop: str = ""                       # reference to the input property
+        self._co2_prop: str = ""
+        self._gain: float = 0.0                          # gain of the resistance rate
+        self._skip_ca: bool = False 
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # Get a reference to the input site
+        model, prop = self.input.split(".")
+        self._input_site = self._model_engine.models[model]
+        self._input_prop = prop
+
+        #Get reference to the pco2
+        model1, prop1 = self.co2.split(".")
+        self._co2_site = self._model_engine.models[model1]
+        self._co2_prop = prop1
+
+        # Set the initial values
+        self.current_value = getattr(self._input_site, self._input_prop)
+        self.resistance_rate = self._set_resistance_rate
+        
+        # Flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+           # for performance reasons, the update is done only every 15 ms instead of every step
+        self._update_counter += self._t
+        if self._update_counter >= self._update_interval:
+            self._update_counter = 0.0
+        
+            #self.pco2_br = self._model_engine.models["BR"].pco2
+
+            # get the input value
+            self.input_value = getattr(self._input_site, self._input_prop)
+            self.co2_value = getattr(self._co2_site, self._co2_prop)
+
+            #calculate cpp
+            #self.cpp = self.input_value - self.mean_br_value
+        
+        #CO2 REGULATION
+        if self.co2_value <= 30: #linear trend, lower slope; nog testen! vooral slope value nog testen!
+            self._model_engine.models["AA_BR"].r_ca_factor = 0.5 #make only pco2 dependent 
+            self._model_engine.models["AA_BR"].r_factor = 1 + (30 - self.co2_value)*0.10
+            self._skip_ca = True
+
+        if self.co2_value >= 50: #linear trend, steeper slope; nog testen, vooral slope value
+            self._model_engine.models["AA_BR"].r_ca_factor = 0.5 #make only pco2 dependent
+            self._model_engine.models["AA_BR"].r_factor = 1 -min((self.co2_value - 50) * 0.098, 0.991)
+            self.resistance_rate = 0.5
+            self._skip_ca = True
+         
+        elif self.co2_value >= 30 and self.co2_value <35: #plateau wider by increasing ULA, downward shift of curve 
+            self.max_value = 57 #increase ULA, with value of 5
+            self._model_engine.models["AA_BR"].r_factor = 1.152#see calc ipad, is deze nu nog gelijk aan 0.848? 
+            self._skip_ca = False
+
+        elif self.co2_value > 45 and self.co2_value <= 50: #plateau smaller by decreasing ULA, upward shift of curve 
+            self.max_value = 47 #decrease ULA, with value of 5
+            self._model_engine.models["AA_BR"].r_factor = 0.900 #r_for cannot be zero, should leave resistance at 50? was 0.848
+            self._skip_ca = False #generally CBF, so change r_factor (decrease factor) --> results in change in r_for (lower)
+
+
+        elif self.co2_value >= 35 and self.co2_value <= 45: #Voor deze waarden onderstaande script runnen 'als normaal'
+            self._model_engine.models["AA_BR"].r_factor = 1 #normal conditions, just to be sure, also 'resetting'
+            self._skip_ca = False
+            self.max_value = 52
+        
+        #CREATING THE CA CURVE WITH A PLATEAU
+        if not self._skip_ca:
+            if self.input_value > self.max_value:
+                _activation = self.max_value - self.set_value
+                self._gain = 0.058 
+                self.time_constant = 1
+
+            elif self.input_value < self.min_value:
+                _activation = self.min_value - self.set_value
+                self._gain = 0.058                     
+                self.time_constant = 1
+                
+            elif self.input_value >= self.min_value and self.input_value < 35.0:
+                _activation = self.input_value - self.set_value
+                self._gain = 0.0000603 * self.input_value**2 - 0.00311*self.input_value + 0.0948
+
+            elif self.input_value >= 35.0 and self.input_value < 37.5:
+                _activation = self.input_value - self.set_value
+                self._gain = 0.000294 * self.input_value**2 - 0.0196 * self.input_value + 0.3785
+
+            elif self.input_value >= 37.5 and self.input_value < 40:
+                _activation = self.input_value - self.set_value                
+                self._gain = 0.00018 * self.input_value**2 - 0.0119 * self.input_value + 0.250
+                
+            elif self.input_value >=40 and self.input_value < 43:
+                _activation = self.input_value - self.set_value
+                self._gain = 0.02199 * self.input_value **2 - 1.8024 * self.input_value + 36.98
+
+        
+            elif self.input_value >= 47 and self.input_value < 48:
+                _activation = self.input_value - self.set_value
+                self._gain = 0.05 
+                
+            elif self.input_value >= 48 and self.input_value <= 52: 
+                _activation = self.input_value - self.set_value
+                self._gain = 0.058
+
+            elif self.input_value >  52 and self.input_value <= 57: #added as with hypocapnia, ULA is higher and needs other gain values!
+                _activation = self.input_value - self.set_value
+                self._gain = 0.059
+
+            else: #is range 43 - 45 if correct
+                _activation = self.input_value - self.set_value
+                self._gain = 0.066
+
+        
+            # Calculate the resistance rate                 
+            _new_resistance_rate = self._set_resistance_rate + self._gain * _activation
+
+            # Incorporate the time constant to calculate the firing rate
+            self.resistance_rate = self._update_interval * ((1.0 / self.time_constant) * (-self.resistance_rate + _new_resistance_rate)) + self.resistance_rate
+            
+            self._model_engine.models["AA_BR"].r_ca_factor = self.resistance_rate   
+
+        else:
+            self.resistance_rate = 0.5
+            self._model_engine.models["AA_BR"].r_ca_factor = 0.5  
+
+
+
+
+
+
+
+
 #----------------------------------------------------------------------------------------------------------------------------
 # explain grouper models
 class Circulation(BaseModelClass):
@@ -4603,6 +4777,7 @@ class Monitor(BaseModelClass):
         self.da: str = "DA_OUT"
         self.vsd: str = "VSD"
         self.ips: str = "IPS"
+        self.brain: str = "BR"
 
         # -----------------------------------------------
         # initialize dependent properties
@@ -4615,6 +4790,7 @@ class Monitor(BaseModelClass):
         self.abp_pre_syst : float = 0.0                 # arterial blood pressure systole (mmHg)
         self.abp_pre_diast : float = 0.0                # arterial blood pressure diastole (mmHg)
         self.abp_pre_mean : float = 0.0                 # arterial blood pressure mean (mmHg)
+        self.br_mean : float = 0.0
         self.pap_syst : float = 0.0                     # pulmonary artery pressure systole (mmHg)
         self.pap_diast : float = 0.0                    # pulmonary artery pressure diastole (mmHg)
         self.pap_mean : float = 0.0                     # pulmonary artery pressure mean (mmHg)
@@ -4692,6 +4868,8 @@ class Monitor(BaseModelClass):
         self._temp_ra_pres_min = 1000.0
         self._temp_pa_pres_max = -1000.0
         self._temp_pa_pres_min = 1000.0
+        self._temp_br_pres_min = 1000.0
+        self._temp_br_pres_max = -1000.0
         self._lvo_counter = 0.0
         self._rvo_counter = 0.0
         self._cor_flow_counter = 0.0
@@ -4740,6 +4918,8 @@ class Monitor(BaseModelClass):
         self._fo = self._model_engine.models.get(self.fo, None)
         self._vsd = self._model_engine.models.get(self.vsd, None)
         self._ips = self._model_engine.models.get(self.ips, None)
+
+        self._br = self._model_engine.models.get(self.brain, None)
 
         # flag that the model is initialized
         self._is_initialized = True
@@ -4798,6 +4978,13 @@ class Monitor(BaseModelClass):
                 self.pap_mean = (2 * self._temp_pa_pres_min + self._temp_pa_pres_max) / 3.0
                 self._temp_pa_pres_max = -1000.0
                 self._temp_pa_pres_min = 1000.0
+            
+            if self._br:
+                self.br_syst = self._temp_br_pres_max
+                self.br_diast = self._temp_br_pres_min
+                self.br_mean = (2 * self._temp_br_pres_min + self._temp_br_pres_max) / 3.0
+                self._temp_br_pres_max = -1000.0
+                self._temp_br_pres_min = 1000.0 
 
         # Cardiac outputs
         if self._beats_counter > self.hr_avg_beats:
@@ -4889,6 +5076,9 @@ class Monitor(BaseModelClass):
         self._temp_ra_pres_min = (min(self._temp_ra_pres_min, self._ra.pres_in) if self._ra else 1000)
         self._temp_pa_pres_max = (max(self._temp_pa_pres_max, self._pa.pres_in) if self._pa else -1000)
         self._temp_pa_pres_min = (min(self._temp_pa_pres_min, self._pa.pres_in) if self._pa else 1000)
+        
+        self._temp_br_pres_max = (max(self._temp_br_pres_max, self._br.pres_in) if self._br else -1000)
+        self._temp_br_pres_min = (min(self._temp_br_pres_min, self._br.pres_in) if self._br else 1000)
 
     def collect_blood_flows(self) -> None:
         self._lvo_counter += self._lv_aa.flow * self._t if self._lv_aa else 0.0
