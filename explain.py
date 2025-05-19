@@ -4242,13 +4242,6 @@ class CA(BaseModelClass):
             self.resistance_rate = 0.5
             self._model_engine.models["AA_BR"].r_ca_factor = 0.5  
 
-
-
-
-
-
-
-
 #----------------------------------------------------------------------------------------------------------------------------
 # explain grouper models
 class Circulation(BaseModelClass):

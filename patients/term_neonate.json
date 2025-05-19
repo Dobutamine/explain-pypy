@@ -1434,20 +1434,6 @@
             "rr_avg_time": 20.0,
             "sat_avg_time": 5.0,
             "sat_sampling_interval": 1.0
-        },
-        "CA": {
-            "name": "CA",
-            "model_type": "CA",
-            "description": "cerebral autoregulation between AA and BR, based on cerebrovascular resistance",
-            "is_enabled": true,
-            "min_value": 30, 
-            "set_value": 44.5,
-            "max_value": 52,
-            "time_constant": 5,
-            "input": "Monitor.abp_mean",
-            "mean_br": "Monitor.br_mean",
-            "co2": "AA.pco2"
-
         }
     },
     "model_groups": {
