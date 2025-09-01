@@ -1770,6 +1770,9 @@ class GasExchanger(BaseModelClass):
         self._gas.co2 = new_co2_gas
         self._gas.cco2 = new_cco2_gas
 
+class GasDiffusor(BaseModelClass):
+    pass
+
 class Container(BaseModelClass):
     '''
     The Container model is a Capacitance model which can contain other volume containing models (e.g. BloodCapacitance of GasCapacitance).
@@ -2265,6 +2268,9 @@ class Breathing(BaseModelClass):
     def switch_breathing(self, state):
         # switch on/off the spontaneous breathing
         self.breathing_enabled = state
+
+class Pda(BaseModelClass):
+    pass
 
 class Ans(BaseModelClass):
     '''
@@ -3312,399 +3318,6 @@ class Ventilator(BaseModelClass):
         # trigger a breath by setting the expiration time counter
         self._exp_time_counter = self.exp_time + 0.1
 
-class Ecls(BaseModelClass):
-    '''
-    The ECLS class models an ECLS system where blood is taken out of the circulation and oxygen added and carbon dioxied removed
-    and then pumpen back into the circulation. It is build with standard Explain components (BloodCapacitances, BloodResistors, BloodPump, GasCapacitances, GasResistor and GasExchanger)
-    It showcases the flexibility of the object oriented design of the explain model.
-    The cannulas the drain and return blood intro the circulation are a BloodResisters while the tubing and oxygenator are BloodCapacitances
-    The pump is modeled by the BloodPump class while eveything is connected by a set of BloodResistors
-    The gas part is modelend by a GasCapacitance modeling the gas source, artificial lung and a GasCapacitance modeling the outside air. 
-    The GasCapacitances are connected by GasResistors and a GasExchanger model connects the blood and gas parts of the oxygenator.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize the independent parameters
-        self.pres_atm: float = 760.0                    # atmospheric pressure (mmHg)
-        self.tubing_diameter: float = 0.25              # tubing diameter (inch)
-        self.tubing_elastance: float = 11600            # tubing elastance (mmHg/l)
-        self.tubing_in_length: float = 1.0              # tubing in length (m)
-        self.tubing_out_length: float = 1.0             # tubing out length (m)
-        self.tubing_clamped: bool = True                # states whether the tubing is clamped or not
-        self.drainage_cannula_diameter: float = 12      # drainage cannula diameter in (Fr)
-        self.drainage_cannula_length: float = 0.11      # drainage cannula length (m)
-        self.return_cannula_diameter: float = 10        # drainage cannula diameter in (Fr)
-        self.return_cannula_length: float = 0.11        # drainage cannula length (m)
-        self.pump_volume: float = 0.8                   # volume of the pumphead (l)
-        self.oxy_volume: float = 0.8                    # volume of the oxygenator (l)
-        self.oxy_resistance: float = 100                # resistance of the oxygenator (mmHg/l*s)
-        self.oxy_dif_o2: float = 0.001                  # oxygenator oxygen diffusion constant (mmol/mmHg)
-        self.oxy_dif_co2: float = 0.001                 # oxygenator carbon dioxide diffusion constant (mmol/mmHg)
-        self.sweep_gas: float = 0.5                     # gas flowing through the gas part of the oxygenator (L/min)
-        self.fio2_gas: float = 0.3                      # fractional oxygen content of the oxygenator gas
-        self.co2_gas_flow: float = 0.4                  # added carbon dioxide gas flow (L/min)
-        self.temp_gas: float = 37.0                     # temperature of the oxygenator gas (dgs C)
-        self.humidity_gas: float = 0.5                  # humidity of the oxygenator gas (0-1)
-        self.pump_rpm: float = 1500                     # rotations of the centrifugal pump (rpm)
-
-        # initialize the dependent parameters
-        self.blood_flow: float = 0.0                    # ecls blood flow (L/min)   
-        self.gas_flow: float = 0.0                      # ecls gas flow (L/min)
-        self.p_ven: float = 0.0                         # pressure on the drainage side of the ecls system (mmHg)
-        self.p_int: float = 0.0                         # pressure between the pump and oxygenator (mmHg)
-        self.p_art: float = 0.0                         # pressure after the oxygenator on the return side of the ecls system (mmHg)
-        self.pre_oxy_bloodgas: object = {}              # object holding the bloodgas pre-oxygenator
-        self.post_oxy_bloodgas: object = {}             # object holding the bloodgas post-oxygenator
-
-        # initialize the local parameters
-        self._ecls_tubin = None                         # reference to the inlet tubing on the drainage side (BloodCapacitance)
-        self._ecls_pump = None                          # reference to the the ecls pump (BloodPump)
-        self._ecls_oxy = None                           # reference to the oxygenator (BloodCapacitance)
-        self._ecls_tubout = None                        # reference to the outlet tubing on the return side (BloodCapacitance)
-        self._ecls_drainage = None                      # reference to the drainage cnanula (BloodResistor)
-        self._ecls_tubin_pump = None                    # reference to the connector between inlet tubing and the pump (BloodResistor)
-        self._ecls_pump_oxy = None                      # reference to the connector between the pump and oxygenator (BloodResistor)
-        self._ecls_oxy_tubout = None                    # reference to the connector between the oxygenator and outlet tubing (BloodResistor)
-        self._ecls_return = None                        # reference to the return cannula (BloodResistor)
-        self._ecls_gasin = None                         # reference to the gas source (GasCapacitance)
-        self._ecls_gasoxy = None                        # reference to the oxygenator (GasCapacitance)
-        self._ecls_gasout = None                        # reference to the gas outside world (GasCapacitance)
-        self._ecls_gasin_oxy = None                     # reference to the connector connecting the gas source to the oxygenator (GasResistor)
-        self._ecls_oxy_gasout = None                    # reference to the connector connecting the oxygenator to the outside world (Gasresistor)
-        self._ecls_parts = []                           # list holding all ecls parts
-        self._set_gas_composition = None                # reference to the function of the Gas model which calculates the composition of a gas containing model
-        self._calc_blood_composition = None             # reference to the function of the Blood model which calculates the composition of a blood containing model
-        self._fico2_gas: float = 0.0004                 # fractional carbon dioxide content of the ecls gas
-        self._update_interval = 0.015                   # update interval of the mdoel (s)
-        self._update_counter = 0.0                      # update counter (s)
-        self._bloodgas_interval = 1.0                   # interval at which the blood gasses are calculated (s)
-        self._bloodgas_counter = 0.0                    # counter of the bloodgas interval (s)
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # get a reference to all ecls components for performance reasons
-        self._ecls_tubin = self._model_engine.models["ECLS_TUBIN"]
-        self._ecls_pump = self._model_engine.models["ECLS_PUMP"]
-        self._ecls_oxy = self._model_engine.models["ECLS_OXY"]
-        self._ecls_tubout = self._model_engine.models["ECLS_TUBOUT"]
-        self._ecls_drainage = self._model_engine.models["ECLS_DRAINAGE"]
-        self._ecls_tubin_pump = self._model_engine.models["ECLS_TUBIN_PUMP"]
-        self._ecls_pump_oxy = self._model_engine.models["ECLS_PUMP_OXY"]
-        self._ecls_oxy_tubout = self._model_engine.models["ECLS_OXY_TUBOUT"]
-        self._ecls_return = self._model_engine.models["ECLS_RETURN"]
-        self._ecls_gasin = self._model_engine.models["ECLS_GASIN"]
-        self._ecls_gasoxy = self._model_engine.models["ECLS_GASOXY"]
-        self._ecls_gasout = self._model_engine.models["ECLS_GASOUT"]
-        self._ecls_gasin_oxy = self._model_engine.models["ECLS_GASIN_OXY"]
-        self._ecls_oxy_gasout = self._model_engine.models["ECLS_OXY_GASOUT"]
-        self._ecls_gasex = self._model_engine.models["ECLS_GASEX"]
-        
-        # clear the ecls part list
-        self._ecls_parts = []
-        # add the ecls models to the part list
-        self._ecls_parts.append(self._ecls_tubin)
-        self._ecls_parts.append(self._ecls_pump)
-        self._ecls_parts.append(self._ecls_oxy)
-        self._ecls_parts.append(self._ecls_tubout)
-        self._ecls_parts.append(self._ecls_drainage)
-        self._ecls_parts.append(self._ecls_tubin_pump)
-        self._ecls_parts.append(self._ecls_pump_oxy)
-        self._ecls_parts.append(self._ecls_oxy_tubout)
-        self._ecls_parts.append(self._ecls_return)
-        self._ecls_parts.append(self._ecls_gasin)
-        self._ecls_parts.append(self._ecls_gasoxy)
-        self._ecls_parts.append(self._ecls_tubin)
-        self._ecls_parts.append(self._ecls_gasout)
-        self._ecls_parts.append(self._ecls_gasin_oxy)
-        self._ecls_parts.append(self._ecls_oxy_gasout)
-        self._ecls_parts.append(self._ecls_gasex)
-
-        # get a reference to the gas and blood composition routines
-        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
-        self._set_gas_composition = self._model_engine.models["Gas"].set_gas_composition
-
-        # set the tubing properties
-        self.set_tubing_properties()
-
-        # set the properties of the cannulas
-        self.set_cannula_properties()
-
-        # set the properties of the oxygenator
-        self.set_oxygenator_properties()
-
-        # set the properties of the pump
-        self.set_pump_properties()
-
-        # set the properties of the gas source
-        self.set_gas_source_properties()
-
-        # set the properties of the gas outlet
-        self.set_gas_outlet_properties()
-
-        # set the properties of the gas oxy
-        self.set_gas_oxy_properties()
-
-        # set the gas exchanger properties
-        self.set_gasexchanger_properties(self.oxy_dif_o2, self.oxy_dif_co2)
-
-        # set the gas flow
-        self.set_gas_flow(self.sweep_gas)
-
-        # set the pump speed
-        self.set_pump_speed(1500)
-
-        # set the clamp
-        self.set_clamp(True)
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # increase the update timer
-        self._update_counter += self._t
-        if self._update_counter > self._update_interval:
-            self._update_counter = 0.0
-            # store the blood and gas flows
-            self.blood_flow: float = self._ecls_return.flow * 60.0
-            self.gas_flow: float = self._ecls_oxy_gasout.flow * 60.0
-            
-            # store the pressures
-            self.p_ven: float = self._ecls_tubin.pres_in
-            self.p_int: float = self._ecls_oxy.pres_in
-            self.p_art: float = self._ecls_tubout.pres_in
-
-        # calculate the bloodgasses
-        self._bloodgas_counter += self._t
-        if self._bloodgas_counter > self._bloodgas_interval:
-            self._bloodgas_counter: float = 0.0
-
-            # calculate the bloodgases
-            self._calc_blood_composition(self._ecls_tubin)
-            self._calc_blood_composition(self._ecls_tubout)
-
-            self.pre_oxy_bloodgas: object = {
-                "ph": self._ecls_tubin.ph,
-                "po2": self._ecls_tubin.po2,
-                "pco2": self._ecls_tubin.pco2,
-                "hco3": self._ecls_tubin.hco3,
-                "be": self._ecls_tubin.be,
-                "so2": self._ecls_tubin.so2
-            }
-            self.post_oxy_bloodgas: object = {
-                "ph": self._ecls_tubout.ph,
-                "po2": self._ecls_tubout.po2,
-                "pco2": self._ecls_tubout.pco2,
-                "hco3": self._ecls_tubout.hco3,
-                "be": self._ecls_tubout.be,
-                "so2": self._ecls_tubout.so2
-            }
-
-    def switch_ecls(self, state: bool) -> None:
-        # switch the calculations of the ecls model
-        self.is_enabled = state
-
-        # enable of disable all ecls components
-        for ep in self._ecls_parts:
-            ep.is_enabled = state
-            # make sure the no flow flag is set correctly on the resistors (safety)
-            if hasattr(ep, "no_flow"):
-                ep.no_flow = not state
-    
-    def set_pump_speed(self, new_pump_speed) -> None:
-        # store new pump speed
-        self.pump_rpm = new_pump_speed
-        # set the pump speed on the BloodPump model
-        self._ecls_pump.pump_rpm = self.pump_rpm
-
-    def set_clamp(self, state) -> None:
-        # clamp/unclamp the drainage and return tubing by setting the no_flow property
-        self.tubing_clamped = state
-        self._ecls_drainage.no_flow = state
-        self._ecls_return.no_flow = state
-
-    def set_fio2(self, new_fio2) -> None:
-        # set the new fio2 of the ecls gas
-        if new_fio2 > 20:
-            self.fio2_gas = new_fio2 / 100.0
-        else:
-            self.fio2_gas = new_fio2
-
-        # determine the fico2 of the gas
-        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
-        # recalculate the gas composition
-        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
-
-    def set_co2_flow(self, new_co2_flow) -> None:
-        # store the new gas flow
-        self.co2_gas_flow = new_co2_flow
-        # determine the fico2 of the gas
-        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
-        # recalculate the gas composition
-        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
-    
-    def set_gas_flow(self, new_sweep_gas) -> None:
-        # set the new gas flow
-        if new_sweep_gas > 0.0:
-            # store the new flow
-            self.sweep_gas = new_sweep_gas
-            # calculate the pressures in the GasCapacitances of the gas part of the ecls system
-            self._ecls_gasin.calc_model()
-            self._ecls_gasoxy.calc_model()
-            self._ecls_gasout.calc_model()
-            # calculate the resistances of the connectors which are needed to get the correct gas flow
-            self._ecls_gasin_oxy.r_for = (self._ecls_gasin.pres - self.pres_atm) / (self.sweep_gas / 60.0)
-            self._ecls_gasin_oxy.r_back = self._ecls_gasin_oxy.r_for
-
-    def set_oxygenator_volume(self, new_volume) -> None:
-        # set the new oxygenator volume (blood part)
-        self.oxy_volume = new_volume
-        # reset the oxygenator
-        self.set_oxygenator_properties()
-
-    def set_pump_volume(self, new_volume) -> None:
-        # set the new pump volume
-        self.pump_volume = new_volume
-        # reset the pump
-        self.set_pump_volume()
-
-    def set_oxygenator_resistance(self, new_resistance) -> None:
-        # set the new oxygnator (blood part) additional resistance (on top of the tubing resistance)
-        self.oxy_resistance = new_resistance
-        self._ecls_oxy_tubout.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_out_length) + self.oxy_resistance
-        self._ecls_oxy_tubout.r_back = self._ecls_oxy_tubout.r_for + self.oxy_resistance
-        
-    def set_drainage_cannula_diameter(self, new_diameter) -> None:
-        # set the drainage cannula diameter
-        self.drainage_cannula_diameter = new_diameter
-        # reset the dfainage cannula
-        self.set_cannula_properties()
-
-    def set_return_cannula_diameter(self, new_diameter) -> None:
-        # set the return cannula diameter
-        self.return_cannula_diameter = new_diameter
-        # reset the return cannula
-        self.set_cannula_properties()
-
-    def set_drainage_cannula_length(self, new_length) -> None:
-        # set the drainage cannula length
-        self.drainage_cannula_length = new_length
-        # reset the dfainage cannula
-        self.set_cannula_properties()
-
-    def set_return_cannula_length(self, new_length) -> None:
-        # set the return cannula length
-        self.return_cannula_length = new_length
-        # reset the return cannula
-        self.set_cannula_properties()
-
-    def set_tubing_diameter(self, new_diameter) -> None:
-        # set the tubing diameter
-        self.tubing_diameter = new_diameter
-        self.set_tubing_properties()
-
-    def set_tubing_length(self, new_length) -> None:
-        # set the tubing total length and assume the drainage and return part have the same length
-        self.tubing_in_length = new_length / 2.0
-        self.tubing_out_length = new_length / 2.0
-        self.set_tubing_properties
-
-    def set_tubing_elastance(self, new_elastance) -> None:
-        # set the tubing elastance
-        self.tubing_elastance = new_elastance
-        self.set_tubing_properties()
-    
-    def set_gas_oxy_properties(self) -> None:
-        # calculate the gas composition of the gas part of the oxygenator
-        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
-        self._set_gas_composition(self._ecls_gasoxy, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
-
-    def set_gas_outlet_properties(self) -> None:
-        # calculate the composition of the outside air
-        self._set_gas_composition(self._ecls_gasout, 0.205, 20.0, 0.1, 0.0004)
-
-    def set_gas_source_properties(self) -> None:
-        # calculate the gas composition of the gas source
-        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
-        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
-
-    def set_gasexchanger_properties(self, _oxy_dif_o2, _oxy_dif_co2) -> None:
-        # set the diffusion constants for oxygen and carbon dioxide of the GasExchanger
-        self.oxy_dif_o2 = _oxy_dif_o2
-        self.oxy_dif_co2 = _oxy_dif_co2
-        self._ecls_gasex.dif_o2 = self.oxy_dif_o2
-        self._ecls_gasex.dif_co2 = self.oxy_dif_co2
-
-    def set_oxygenator_properties(self) -> None:
-        self._ecls_oxy.vol = self.oxy_volume
-        self._ecls_oxy.u_vol = self.oxy_volume
-        self._ecls_oxy.calc_model()
-
-    def set_pump_properties(self) -> None:
-        self._ecls_pump.vol = self.pump_volume
-        self._ecls_pump.u_vol = self.pump_volume
-        self._ecls_pump.calc_model()
-
-    def set_cannula_properties(self) -> None:
-        _drainage_res = self.calc_tube_resistance(self.drainage_cannula_diameter * 0.00033, self.drainage_cannula_length)
-        self._ecls_drainage.r_for = _drainage_res
-        self._ecls_drainage.r_back = _drainage_res
-
-        _return_res = self.calc_tube_resistance(self.return_cannula_diameter * 0.00033, self.return_cannula_length)
-        self._ecls_return.r_for = _return_res
-        self._ecls_return.r_back = _return_res
-
-    def set_tubing_properties(self) -> None:
-        # tubing in properties
-        _tubing_volume_in = self.calc_tube_volume(self.tubing_diameter * 0.0254, self.tubing_in_length)
-        self._ecls_tubin.vol = _tubing_volume_in
-        self._ecls_tubin.u_vol = _tubing_volume_in
-        self._ecls_tubin.el_base = self.tubing_elastance
-        self._ecls_tubin.calc_model()
-        self._ecls_tubin_pump.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_in_length)
-        self._ecls_tubin_pump.r_back = self._ecls_tubin_pump.r_for
-
-        _tubing_volume_out = self.calc_tube_volume(self.tubing_diameter * 0.0254, self.tubing_out_length)
-        self._ecls_tubout.vol = _tubing_volume_out
-        self._ecls_tubout.u_vol = _tubing_volume_out
-        self._ecls_tubout.el_base = self.tubing_elastance
-        self._ecls_tubout.calc_model()
-        self._ecls_oxy_tubout.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_out_length) + self.oxy_resistance
-        self._ecls_oxy_tubout.r_back = self._ecls_oxy_tubout.r_for + + self.oxy_resistance
-
-    def calc_tube_volume(self, diameter, length) -> float:
-        # return the volume in liters
-        return math.pi * math.pow(0.5 * diameter, 2) * length * 1000.0
-    
-    def calc_tube_resistance(self, diameter, length, viscosity=6.0) -> float:
-        # resistance is calculated using Poiseuille's Law : R = (8 * n * L) / (PI * r^4)
-
-        # resistance is in mmHg * s / l
-        # L = length in meters
-        # r = radius in meters
-        # n = viscosity in centiPoise
-
-        # convert viscosity from centiPoise to Pa * s
-        n_pas = viscosity / 1000.0
-
-        # convert the length to meters
-        length_meters = length
-
-        # calculate radius in meters
-        radius_meters = diameter / 2
-
-        # calculate the resistance    Pa *  / m3
-        res = (8.0 * n_pas * length_meters) / (math.pi * math.pow(radius_meters, 4))
-
-        # convert resistance of Pa/m3 to mmHg/l
-        res = res * 0.00000750062
-        return res
-
 class Placenta(BaseModelClass):
     '''
     The Placenta class models the placental circulation and gasexchange using core models of the explain model.
@@ -4566,6 +4179,401 @@ class Shunts(BaseModelClass):
             return res
         else:
             return 100000000
+
+#----------------------------------------------------------------------------------------------------------------------------
+# explain device models
+class Ecls(BaseModelClass):
+    '''
+    The ECLS class models an ECLS system where blood is taken out of the circulation and oxygen added and carbon dioxied removed
+    and then pumpen back into the circulation. It is build with standard Explain components (BloodCapacitances, BloodResistors, BloodPump, GasCapacitances, GasResistor and GasExchanger)
+    It showcases the flexibility of the object oriented design of the explain model.
+    The cannulas the drain and return blood intro the circulation are a BloodResisters while the tubing and oxygenator are BloodCapacitances
+    The pump is modeled by the BloodPump class while eveything is connected by a set of BloodResistors
+    The gas part is modelend by a GasCapacitance modeling the gas source, artificial lung and a GasCapacitance modeling the outside air. 
+    The GasCapacitances are connected by GasResistors and a GasExchanger model connects the blood and gas parts of the oxygenator.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize the independent parameters
+        self.pres_atm: float = 760.0                    # atmospheric pressure (mmHg)
+        self.tubing_diameter: float = 0.25              # tubing diameter (inch)
+        self.tubing_elastance: float = 11600            # tubing elastance (mmHg/l)
+        self.tubing_in_length: float = 1.0              # tubing in length (m)
+        self.tubing_out_length: float = 1.0             # tubing out length (m)
+        self.tubing_clamped: bool = True                # states whether the tubing is clamped or not
+        self.drainage_cannula_diameter: float = 12      # drainage cannula diameter in (Fr)
+        self.drainage_cannula_length: float = 0.11      # drainage cannula length (m)
+        self.return_cannula_diameter: float = 10        # drainage cannula diameter in (Fr)
+        self.return_cannula_length: float = 0.11        # drainage cannula length (m)
+        self.pump_volume: float = 0.8                   # volume of the pumphead (l)
+        self.oxy_volume: float = 0.8                    # volume of the oxygenator (l)
+        self.oxy_resistance: float = 100                # resistance of the oxygenator (mmHg/l*s)
+        self.oxy_dif_o2: float = 0.001                  # oxygenator oxygen diffusion constant (mmol/mmHg)
+        self.oxy_dif_co2: float = 0.001                 # oxygenator carbon dioxide diffusion constant (mmol/mmHg)
+        self.sweep_gas: float = 0.5                     # gas flowing through the gas part of the oxygenator (L/min)
+        self.fio2_gas: float = 0.3                      # fractional oxygen content of the oxygenator gas
+        self.co2_gas_flow: float = 0.4                  # added carbon dioxide gas flow (L/min)
+        self.temp_gas: float = 37.0                     # temperature of the oxygenator gas (dgs C)
+        self.humidity_gas: float = 0.5                  # humidity of the oxygenator gas (0-1)
+        self.pump_rpm: float = 1500                     # rotations of the centrifugal pump (rpm)
+
+        # initialize the dependent parameters
+        self.blood_flow: float = 0.0                    # ecls blood flow (L/min)   
+        self.gas_flow: float = 0.0                      # ecls gas flow (L/min)
+        self.p_ven: float = 0.0                         # pressure on the drainage side of the ecls system (mmHg)
+        self.p_int: float = 0.0                         # pressure between the pump and oxygenator (mmHg)
+        self.p_art: float = 0.0                         # pressure after the oxygenator on the return side of the ecls system (mmHg)
+        self.pre_oxy_bloodgas: object = {}              # object holding the bloodgas pre-oxygenator
+        self.post_oxy_bloodgas: object = {}             # object holding the bloodgas post-oxygenator
+
+        # initialize the local parameters
+        self._ecls_tubin = None                         # reference to the inlet tubing on the drainage side (BloodCapacitance)
+        self._ecls_pump = None                          # reference to the the ecls pump (BloodPump)
+        self._ecls_oxy = None                           # reference to the oxygenator (BloodCapacitance)
+        self._ecls_tubout = None                        # reference to the outlet tubing on the return side (BloodCapacitance)
+        self._ecls_drainage = None                      # reference to the drainage cnanula (BloodResistor)
+        self._ecls_tubin_pump = None                    # reference to the connector between inlet tubing and the pump (BloodResistor)
+        self._ecls_pump_oxy = None                      # reference to the connector between the pump and oxygenator (BloodResistor)
+        self._ecls_oxy_tubout = None                    # reference to the connector between the oxygenator and outlet tubing (BloodResistor)
+        self._ecls_return = None                        # reference to the return cannula (BloodResistor)
+        self._ecls_gasin = None                         # reference to the gas source (GasCapacitance)
+        self._ecls_gasoxy = None                        # reference to the oxygenator (GasCapacitance)
+        self._ecls_gasout = None                        # reference to the gas outside world (GasCapacitance)
+        self._ecls_gasin_oxy = None                     # reference to the connector connecting the gas source to the oxygenator (GasResistor)
+        self._ecls_oxy_gasout = None                    # reference to the connector connecting the oxygenator to the outside world (Gasresistor)
+        self._ecls_parts = []                           # list holding all ecls parts
+        self._set_gas_composition = None                # reference to the function of the Gas model which calculates the composition of a gas containing model
+        self._calc_blood_composition = None             # reference to the function of the Blood model which calculates the composition of a blood containing model
+        self._fico2_gas: float = 0.0004                 # fractional carbon dioxide content of the ecls gas
+        self._update_interval = 0.015                   # update interval of the mdoel (s)
+        self._update_counter = 0.0                      # update counter (s)
+        self._bloodgas_interval = 1.0                   # interval at which the blood gasses are calculated (s)
+        self._bloodgas_counter = 0.0                    # counter of the bloodgas interval (s)
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # get a reference to all ecls components for performance reasons
+        self._ecls_tubin = self._model_engine.models["ECLS_TUBIN"]
+        self._ecls_pump = self._model_engine.models["ECLS_PUMP"]
+        self._ecls_oxy = self._model_engine.models["ECLS_OXY"]
+        self._ecls_tubout = self._model_engine.models["ECLS_TUBOUT"]
+        self._ecls_drainage = self._model_engine.models["ECLS_DRAINAGE"]
+        self._ecls_tubin_pump = self._model_engine.models["ECLS_TUBIN_PUMP"]
+        self._ecls_pump_oxy = self._model_engine.models["ECLS_PUMP_OXY"]
+        self._ecls_oxy_tubout = self._model_engine.models["ECLS_OXY_TUBOUT"]
+        self._ecls_return = self._model_engine.models["ECLS_RETURN"]
+        self._ecls_gasin = self._model_engine.models["ECLS_GASIN"]
+        self._ecls_gasoxy = self._model_engine.models["ECLS_GASOXY"]
+        self._ecls_gasout = self._model_engine.models["ECLS_GASOUT"]
+        self._ecls_gasin_oxy = self._model_engine.models["ECLS_GASIN_OXY"]
+        self._ecls_oxy_gasout = self._model_engine.models["ECLS_OXY_GASOUT"]
+        self._ecls_gasex = self._model_engine.models["ECLS_GASEX"]
+        
+        # clear the ecls part list
+        self._ecls_parts = []
+        # add the ecls models to the part list
+        self._ecls_parts.append(self._ecls_tubin)
+        self._ecls_parts.append(self._ecls_pump)
+        self._ecls_parts.append(self._ecls_oxy)
+        self._ecls_parts.append(self._ecls_tubout)
+        self._ecls_parts.append(self._ecls_drainage)
+        self._ecls_parts.append(self._ecls_tubin_pump)
+        self._ecls_parts.append(self._ecls_pump_oxy)
+        self._ecls_parts.append(self._ecls_oxy_tubout)
+        self._ecls_parts.append(self._ecls_return)
+        self._ecls_parts.append(self._ecls_gasin)
+        self._ecls_parts.append(self._ecls_gasoxy)
+        self._ecls_parts.append(self._ecls_tubin)
+        self._ecls_parts.append(self._ecls_gasout)
+        self._ecls_parts.append(self._ecls_gasin_oxy)
+        self._ecls_parts.append(self._ecls_oxy_gasout)
+        self._ecls_parts.append(self._ecls_gasex)
+
+        # get a reference to the gas and blood composition routines
+        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
+        self._set_gas_composition = self._model_engine.models["Gas"].set_gas_composition
+
+        # set the tubing properties
+        self.set_tubing_properties()
+
+        # set the properties of the cannulas
+        self.set_cannula_properties()
+
+        # set the properties of the oxygenator
+        self.set_oxygenator_properties()
+
+        # set the properties of the pump
+        self.set_pump_properties()
+
+        # set the properties of the gas source
+        self.set_gas_source_properties()
+
+        # set the properties of the gas outlet
+        self.set_gas_outlet_properties()
+
+        # set the properties of the gas oxy
+        self.set_gas_oxy_properties()
+
+        # set the gas exchanger properties
+        self.set_gasexchanger_properties(self.oxy_dif_o2, self.oxy_dif_co2)
+
+        # set the gas flow
+        self.set_gas_flow(self.sweep_gas)
+
+        # set the pump speed
+        self.set_pump_speed(1500)
+
+        # set the clamp
+        self.set_clamp(True)
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # increase the update timer
+        self._update_counter += self._t
+        if self._update_counter > self._update_interval:
+            self._update_counter = 0.0
+            # store the blood and gas flows
+            self.blood_flow: float = self._ecls_return.flow * 60.0
+            self.gas_flow: float = self._ecls_oxy_gasout.flow * 60.0
+            
+            # store the pressures
+            self.p_ven: float = self._ecls_tubin.pres_in
+            self.p_int: float = self._ecls_oxy.pres_in
+            self.p_art: float = self._ecls_tubout.pres_in
+
+        # calculate the bloodgasses
+        self._bloodgas_counter += self._t
+        if self._bloodgas_counter > self._bloodgas_interval:
+            self._bloodgas_counter: float = 0.0
+
+            # calculate the bloodgases
+            self._calc_blood_composition(self._ecls_tubin)
+            self._calc_blood_composition(self._ecls_tubout)
+
+            self.pre_oxy_bloodgas: object = {
+                "ph": self._ecls_tubin.ph,
+                "po2": self._ecls_tubin.po2,
+                "pco2": self._ecls_tubin.pco2,
+                "hco3": self._ecls_tubin.hco3,
+                "be": self._ecls_tubin.be,
+                "so2": self._ecls_tubin.so2
+            }
+            self.post_oxy_bloodgas: object = {
+                "ph": self._ecls_tubout.ph,
+                "po2": self._ecls_tubout.po2,
+                "pco2": self._ecls_tubout.pco2,
+                "hco3": self._ecls_tubout.hco3,
+                "be": self._ecls_tubout.be,
+                "so2": self._ecls_tubout.so2
+            }
+
+    def switch_ecls(self, state: bool) -> None:
+        # switch the calculations of the ecls model
+        self.is_enabled = state
+
+        # enable of disable all ecls components
+        for ep in self._ecls_parts:
+            ep.is_enabled = state
+            # make sure the no flow flag is set correctly on the resistors (safety)
+            if hasattr(ep, "no_flow"):
+                ep.no_flow = not state
+    
+    def set_pump_speed(self, new_pump_speed) -> None:
+        # store new pump speed
+        self.pump_rpm = new_pump_speed
+        # set the pump speed on the BloodPump model
+        self._ecls_pump.pump_rpm = self.pump_rpm
+
+    def set_clamp(self, state) -> None:
+        # clamp/unclamp the drainage and return tubing by setting the no_flow property
+        self.tubing_clamped = state
+        self._ecls_drainage.no_flow = state
+        self._ecls_return.no_flow = state
+
+    def set_fio2(self, new_fio2) -> None:
+        # set the new fio2 of the ecls gas
+        if new_fio2 > 20:
+            self.fio2_gas = new_fio2 / 100.0
+        else:
+            self.fio2_gas = new_fio2
+
+        # determine the fico2 of the gas
+        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
+        # recalculate the gas composition
+        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
+
+    def set_co2_flow(self, new_co2_flow) -> None:
+        # store the new gas flow
+        self.co2_gas_flow = new_co2_flow
+        # determine the fico2 of the gas
+        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
+        # recalculate the gas composition
+        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
+    
+    def set_gas_flow(self, new_sweep_gas) -> None:
+        # set the new gas flow
+        if new_sweep_gas > 0.0:
+            # store the new flow
+            self.sweep_gas = new_sweep_gas
+            # calculate the pressures in the GasCapacitances of the gas part of the ecls system
+            self._ecls_gasin.calc_model()
+            self._ecls_gasoxy.calc_model()
+            self._ecls_gasout.calc_model()
+            # calculate the resistances of the connectors which are needed to get the correct gas flow
+            self._ecls_gasin_oxy.r_for = (self._ecls_gasin.pres - self.pres_atm) / (self.sweep_gas / 60.0)
+            self._ecls_gasin_oxy.r_back = self._ecls_gasin_oxy.r_for
+
+    def set_oxygenator_volume(self, new_volume) -> None:
+        # set the new oxygenator volume (blood part)
+        self.oxy_volume = new_volume
+        # reset the oxygenator
+        self.set_oxygenator_properties()
+
+    def set_pump_volume(self, new_volume) -> None:
+        # set the new pump volume
+        self.pump_volume = new_volume
+        # reset the pump
+        self.set_pump_volume()
+
+    def set_oxygenator_resistance(self, new_resistance) -> None:
+        # set the new oxygnator (blood part) additional resistance (on top of the tubing resistance)
+        self.oxy_resistance = new_resistance
+        self._ecls_oxy_tubout.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_out_length) + self.oxy_resistance
+        self._ecls_oxy_tubout.r_back = self._ecls_oxy_tubout.r_for + self.oxy_resistance
+        
+    def set_drainage_cannula_diameter(self, new_diameter) -> None:
+        # set the drainage cannula diameter
+        self.drainage_cannula_diameter = new_diameter
+        # reset the dfainage cannula
+        self.set_cannula_properties()
+
+    def set_return_cannula_diameter(self, new_diameter) -> None:
+        # set the return cannula diameter
+        self.return_cannula_diameter = new_diameter
+        # reset the return cannula
+        self.set_cannula_properties()
+
+    def set_drainage_cannula_length(self, new_length) -> None:
+        # set the drainage cannula length
+        self.drainage_cannula_length = new_length
+        # reset the dfainage cannula
+        self.set_cannula_properties()
+
+    def set_return_cannula_length(self, new_length) -> None:
+        # set the return cannula length
+        self.return_cannula_length = new_length
+        # reset the return cannula
+        self.set_cannula_properties()
+
+    def set_tubing_diameter(self, new_diameter) -> None:
+        # set the tubing diameter
+        self.tubing_diameter = new_diameter
+        self.set_tubing_properties()
+
+    def set_tubing_length(self, new_length) -> None:
+        # set the tubing total length and assume the drainage and return part have the same length
+        self.tubing_in_length = new_length / 2.0
+        self.tubing_out_length = new_length / 2.0
+        self.set_tubing_properties
+
+    def set_tubing_elastance(self, new_elastance) -> None:
+        # set the tubing elastance
+        self.tubing_elastance = new_elastance
+        self.set_tubing_properties()
+    
+    def set_gas_oxy_properties(self) -> None:
+        # calculate the gas composition of the gas part of the oxygenator
+        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
+        self._set_gas_composition(self._ecls_gasoxy, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
+
+    def set_gas_outlet_properties(self) -> None:
+        # calculate the composition of the outside air
+        self._set_gas_composition(self._ecls_gasout, 0.205, 20.0, 0.1, 0.0004)
+
+    def set_gas_source_properties(self) -> None:
+        # calculate the gas composition of the gas source
+        self._fico2_gas = (self.co2_gas_flow * 0.001) / self.sweep_gas
+        self._set_gas_composition(self._ecls_gasin, self.fio2_gas, self.temp_gas, self.humidity_gas, self._fico2_gas)
+
+    def set_gasexchanger_properties(self, _oxy_dif_o2, _oxy_dif_co2) -> None:
+        # set the diffusion constants for oxygen and carbon dioxide of the GasExchanger
+        self.oxy_dif_o2 = _oxy_dif_o2
+        self.oxy_dif_co2 = _oxy_dif_co2
+        self._ecls_gasex.dif_o2 = self.oxy_dif_o2
+        self._ecls_gasex.dif_co2 = self.oxy_dif_co2
+
+    def set_oxygenator_properties(self) -> None:
+        self._ecls_oxy.vol = self.oxy_volume
+        self._ecls_oxy.u_vol = self.oxy_volume
+        self._ecls_oxy.calc_model()
+
+    def set_pump_properties(self) -> None:
+        self._ecls_pump.vol = self.pump_volume
+        self._ecls_pump.u_vol = self.pump_volume
+        self._ecls_pump.calc_model()
+
+    def set_cannula_properties(self) -> None:
+        _drainage_res = self.calc_tube_resistance(self.drainage_cannula_diameter * 0.00033, self.drainage_cannula_length)
+        self._ecls_drainage.r_for = _drainage_res
+        self._ecls_drainage.r_back = _drainage_res
+
+        _return_res = self.calc_tube_resistance(self.return_cannula_diameter * 0.00033, self.return_cannula_length)
+        self._ecls_return.r_for = _return_res
+        self._ecls_return.r_back = _return_res
+
+    def set_tubing_properties(self) -> None:
+        # tubing in properties
+        _tubing_volume_in = self.calc_tube_volume(self.tubing_diameter * 0.0254, self.tubing_in_length)
+        self._ecls_tubin.vol = _tubing_volume_in
+        self._ecls_tubin.u_vol = _tubing_volume_in
+        self._ecls_tubin.el_base = self.tubing_elastance
+        self._ecls_tubin.calc_model()
+        self._ecls_tubin_pump.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_in_length)
+        self._ecls_tubin_pump.r_back = self._ecls_tubin_pump.r_for
+
+        _tubing_volume_out = self.calc_tube_volume(self.tubing_diameter * 0.0254, self.tubing_out_length)
+        self._ecls_tubout.vol = _tubing_volume_out
+        self._ecls_tubout.u_vol = _tubing_volume_out
+        self._ecls_tubout.el_base = self.tubing_elastance
+        self._ecls_tubout.calc_model()
+        self._ecls_oxy_tubout.r_for = self.calc_tube_resistance(self.tubing_diameter * 0.0254, self.tubing_out_length) + self.oxy_resistance
+        self._ecls_oxy_tubout.r_back = self._ecls_oxy_tubout.r_for + + self.oxy_resistance
+
+    def calc_tube_volume(self, diameter, length) -> float:
+        # return the volume in liters
+        return math.pi * math.pow(0.5 * diameter, 2) * length * 1000.0
+    
+    def calc_tube_resistance(self, diameter, length, viscosity=6.0) -> float:
+        # resistance is calculated using Poiseuille's Law : R = (8 * n * L) / (PI * r^4)
+
+        # resistance is in mmHg * s / l
+        # L = length in meters
+        # r = radius in meters
+        # n = viscosity in centiPoise
+
+        # convert viscosity from centiPoise to Pa * s
+        n_pas = viscosity / 1000.0
+
+        # convert the length to meters
+        length_meters = length
+
+        # calculate radius in meters
+        radius_meters = diameter / 2
+
+        # calculate the resistance    Pa *  / m3
+        res = (8.0 * n_pas * length_meters) / (math.pi * math.pow(radius_meters, 4))
+
+        # convert resistance of Pa/m3 to mmHg/l
+        res = res * 0.00000750062
+        return res
 
 class Monitor(BaseModelClass):
     '''
