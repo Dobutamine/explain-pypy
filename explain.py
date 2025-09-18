@@ -26,17 +26,17 @@ import math, random, json                               # general modules used b
 from time import perf_counter                           # used to generate model performance parameters
 import matplotlib.pyplot as plt                         # used by the plotter object
 import numpy as np                                      # used by the plotter object
-
+from abc import ABC, abstractmethod                     # used to create abstract base classes
 #----------------------------------------------------------------------------------------------------------------------------
 # explain core models
-class BaseModelClass():
+class BaseModelClass(ABC):
     # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
         # initialize independent properties which all models implement
         self.name: str = name                           # name of the model object
         self.description: str = ""                      # description in for documentation purposes
         self.is_enabled: bool = False                   # flag whether the model is enabled or not
-        self.model_type: str = ""                       # holds the model type e.g. BloodCapacitance
+        self.model_type: str = ""                       # holds the model type e.g. Capacitance
 
         # initialize local properties
         self._model_engine: object = model_ref          # object holding a reference to the model engine
@@ -56,8 +56,9 @@ class BaseModelClass():
         if self.is_enabled and self._is_initialized:
             self.calc_model()
     
+    @abstractmethod
     def calc_model(self) -> None:
-        # this method is overriden by almost all model classes as this is the place where model calculations take place
+        # this method is abstract and must be implemented by subclasses
         pass
 
 class Blood(BaseModelClass):
@@ -6435,7 +6436,3 @@ model.plot(["LV.pres_in", "AA.pres_in"], time_to_calculate=10)
 '''
 
 # run with: python3 explain.py (make sure that you have the matplotlib and numpy libraries installed). Again PyPy3 is MUCH faster :)
-
-
-
-
