@@ -1,34 +1,38 @@
 '''
-Explanatory models in Neonatology (EXPLAIN)
-----------------------------------------------------------------------------------------------------------------------------
-This python script contains the complete documented source code of explain which is an integrated model of human physiology
-The main purpose of this python script is to stay as close to the scientific papers and equations as possible.
-The code is therefore designed for readability and not optimized for performance.
+Explanatory Models in Neonatology (EXPLAIN)
 
-The explain model benefits a lot (>10x speed) from the JIT-compiler of the PyPy3 implementation of Python3 (https://pypy.org).
-The best way to run the model is by using an interactive python environment like a jupyter notebook/lab of any other.
-We recommend the interactive python notebooks in VS Code with PyPy3 as the engine.
+This Python script contains the fully documented source code for EXPLAIN, an integrated model of human physiology with an emphasis 
+on neonatal applications. The implementation is intentionally faithful to the accompanying scientific papers and the underlying 
+mathematical formulations; consequently, the code is optimized for readability and verifiability rather than raw execution speed.
 
-Don't forget to install the three dependencies of explain: matplotlib, numpy and ipykernel (if running in an interactive notebook)
-See at the bottom of this file for instructions on how to run this model and on how to install PyPy3 on Windows/Linux/MacOS
+EXPLAIN attains substantial performance improvements (typically >10×) when executed under the PyPy3 implementation of Python 3 
+due to its JIT compiler. For interactive use and exploratory analysis, it is recommended to run the model in an interactive environment 
+(Jupyter Notebook/Lab or the VS Code notebook interface) configured to use PyPy3 as the runtime engine.
 
-Go to https://explain-user.com for the complete integrated model of the neonate running in realtime as a webapplication with an
-user-friendly graphical user interface. This webapplication is programmed in JS and Webassembly and is much faster and capable 
-of running the models in realtime. However, you don't have access to the source code.
+Required Python packages: `matplotlib`, `numpy`, and `ipykernel` (the latter is required when running within an interactive notebook). 
+Installation and execution instructions, including guidance for installing PyPy3 on Windows, Linux, and macOS, are provided at the 
+end of this file.
 
-If you have problems running this code or other questions please contact Tim Antonius at tim.antonius@radboudumc.nl
+A complete, real-time implementation of the neonatal model is available as a web application at https://explain-user.com. 
+That web application—implemented in JavaScript and WebAssembly—offers a user-friendly graphical interface and substantially 
+higher runtime performance; its source code is not publicly available.
 
-Have fun!
+For questions or support, contact:
+Tim Antonius
+(mailto:tim.antonius@radboudumc.nl)
+
 '''
 #----------------------------------------------------------------------------------------------------------------------------
-# import the dependencies!
+# import the dependencies for reading and running the model
 import math, random, json                               # general modules used by most objects  
 from time import perf_counter                           # used to generate model performance parameters
-import matplotlib.pyplot as plt                         # used by the plotter object
-import numpy as np                                      # used by the plotter object
 from abc import ABC, abstractmethod                     # used to create abstract base classes
+
+# these imports are only used by the plotter object
+import matplotlib.pyplot as plt                         # pyright: ignore[reportMissingModuleSource] used by the plotter object 
+import numpy as np                                      # pyright: ignore[reportMissingImports] used by the plotter object
 #----------------------------------------------------------------------------------------------------------------------------
-# explain core models
+# explain base model class and general models
 class BaseModelClass(ABC):
     # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
@@ -60,6 +64,675 @@ class BaseModelClass(ABC):
     def calc_model(self) -> None:
         # this method is abstract and must be implemented by subclasses
         pass
+
+class BloodDiffusor(BaseModelClass):
+    '''
+    The BloodDiffusor model handles the diffusion of gasses and solutes between two blood containing models 
+    (e.g. BloodCapacitance and BloodTimeVaryingElastance). The diffusion between the gasses
+    o2 and co2 are partial pressure driven and the diffusion between solutes is concentration driven.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties which will be set when the init_model method is called
+        self.comp_blood1: str = "PLF"                   # name of the first blood containing model
+        self.comp_blood2: str = "PLM"                   # name of the second blood containing model
+        self.dif_o2: float = 0.01                       # diffusion constant for o2 (mmol/mmHg * s)
+        self.dif_co2: float = 0.01                      # diffusion constant for co2 (mmol/mmHg * s)
+        self.dif_solutes: dict = {}                     # diffusion constants for the different solutes (mmol/mmol * s)
+
+        # factors
+        self.dif_o2_factor: float = 1.0                 # factor influencing the diffusion constant for o2
+        self.dif_o2_scaling_factor: float = 1.0         # scaling factor for the diffusion constant for o2
+        self.dif_co2_factor: float = 1.0                # factor influencing the diffusion constant for co2
+        self.dif_co2_scaling_factor: float = 1.0        # scaling factor for the diffusion constant for co2
+        self.dif_solutes_factor: float = 1.0            # factor influencing the diffusion constant for all solutes
+        self.dif_solutes_scaling_factor: float = 1.0    # scaling factor for the diffusion constant for all solutes      
+
+        # -----------------------------------------------
+        # initialize dependent properties
+
+        # -----------------------------------------------
+        # local variables
+        self._calc_blood_composition: object = None             # holds a reference to the calc_blood_composition function of the Blood model
+        self._comp_blood1: object = None                        # holds a reference to the first blood containing model
+        self._comp_blood2: object = None                        # holds a reference to the second blood containing model
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # find the two blood containing models and store a reference
+        self._comp_blood1 = self._model_engine.models[self.comp_blood1]
+        self._comp_blood2 = self._model_engine.models[self.comp_blood2]
+
+        # store a reference to the calc_blood_composition function of the Blood model
+        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+
+    def calc_model(self):
+        # calculate the blood composition of the blood components in this diffusor as we need the partial pressures for the gasses diffusion
+        self._calc_blood_composition(self._comp_blood1)
+        self._calc_blood_composition(self._comp_blood2)
+
+        # incorporate the factors
+        _dif_o2 = self.dif_o2 * self.dif_o2_scaling_factor * self.dif_o2_factor
+        _dif_co2 = self.dif_co2 * self.dif_co2_scaling_factor * self.dif_co2_factor
+
+        # diffuse the gasses where the diffusion is partial pressure driven
+        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t * self.dif_o2_factor
+        # update the concentrations
+        self._comp_blood1.to2 = ((self._comp_blood1.to2 * self._comp_blood1.vol) - do2) / self._comp_blood1.vol
+        self._comp_blood2.to2 = ((self._comp_blood2.to2 * self._comp_blood2.vol) + do2) / self._comp_blood2.vol
+
+        dco2 = (self._comp_blood1.pco2 - self._comp_blood2.pco2) * _dif_co2 * self._t * self.dif_co2_factor
+        # update the concentrations
+        self._comp_blood1.tco2 = ((self._comp_blood1.tco2 * self._comp_blood1.vol) - dco2) / self._comp_blood1.vol
+        self._comp_blood2.tco2 = ((self._comp_blood2.tco2 * self._comp_blood2.vol) + dco2) / self._comp_blood2.vol
+
+        # diffuse the solutes where the diffusion is concentration gradient driven
+        for sol, dif in self.dif_solutes.items():
+            dif = dif * self.dif_solutes_factor * self.dif_solutes_scaling_factor
+            # diffuse the solute which is concentration driven
+            dsol = (self._comp_blood1.solutes[sol] - self._comp_blood2.solutes[sol]) * dif * self._t
+            # update the concentration
+            self._comp_blood1.solutes[sol] = ((self._comp_blood1.solutes[sol] * self._comp_blood1.vol) - dsol) / self._comp_blood1.vol
+            self._comp_blood2.solutes[sol] = ((self._comp_blood2.solutes[sol] * self._comp_blood2.vol) + dsol) / self._comp_blood2.vol
+
+class Capacitance(BaseModelClass):
+    def __init__(self, model_ref: object, name: str) -> None:
+        # initialize the BaseModelClass
+        super().__init__(model_ref, name)
+
+        # ---------------------------------------------------------------------------------------------------------------
+        # initialize independent properties. The values of these properties are set by the ModelEngine.
+        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
+        self.el_base: float = 0.0                       # baseline elastance E of the capacitance in (mmHg/L)
+        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.pres_ext: float = 0.0                      # external pressure p2(t) (mmHg)
+
+        # ---------------------------------------------------------------------------------------------------------------
+        # initialize dependent properties
+        self.vol: float = 0.0                           # volume v(t) (L)
+        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
+
+    def calc_model(self) -> None:
+        # calculate the pressure of the capacitance based on the current volume and the elastance properties
+        self.pres = self.calc_pressure(self.vol, self.u_vol, self.el_base, self.el_k, self.pres_ext)
+
+        # reset the external pressure as this is updated every model step
+        self.pres_ext = 0.0
+
+    def calc_pressure(self, v_t:float, UV:float, E: float, K2: float, p2_t) -> float:
+        # calculate and return the pressure
+        if (v_t - UV) >= 0:
+            return K2 * (v_t - UV)**2 + E * (v_t - UV) +  p2_t
+        else:   
+            return -K2 * (v_t - UV)**2 + E * (v_t - UV) +  p2_t
+
+    def volume_in(self, dv: float, comp_from: object) -> None:
+        # change the volume of the capacitance by the amount dv. This function can be called by other model objects like a Resistor object
+        self.vol += dv
+
+    def volume_out(self, dv: float) -> None:
+        # change the volume of the capacitance by the amount dv. This function can be called by other model objects like a Resistor object
+        self.vol -= dv
+
+class Container(BaseModelClass):
+    '''
+    The Container model is a Capacitance model which can contain other volume containing models (e.g. BloodCapacitance of GasCapacitance).
+    The volume of the Container model is determined by the volumes of the models it contains and the Container will transfer it's pressure back to 
+    the models it contains. This allows for modeling of the thoracic cage and pericardium. It also is able to vary it's elastance making it 
+    possible to simulate breathing. This makes the Container a very flexible model being a mix between a Capacitance and a TimeVaryingElastance model.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
+        self.el_base: float = 0.0                       # baseline elastance E of the capacitance in (mmHg/L)
+        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.pres_ext: float = 0.0                      # external pressure p2(t) (mmHg)
+        self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg)
+        self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
+        self.vol_extra: float = 0.0                     # additional volume of the container (L)
+        self.contained_components: list = 0.0           # list of names of models this Container contains
+        
+        # -> unstressed volume factors
+        self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
+        self.u_vol_scaling_factor: float = 1.0          # factor for scaling the unstressed volume
+
+        # -> elastance factors
+        self.el_base_factor: float = 1.0                # factor changing the baseline elastance
+        self.el_base_scaling_factor: float = 1.0        # factor for scaling the baseline elastance
+
+        # -> non-linear elastance factors
+        self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
+        self.el_k_scaling_factor: float = 1.0           # factor for scaling the non-linear part of the elastance
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.vol: float = 0.0                           # volume v(t) (L)
+        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
+        self.pres_in: float = 0.0                       # recoil pressure of the elastance (mmHg)
+
+        # -----------------------------------------------
+        # initialize local properties
+        self._contained_components: list = None         # list of references to the models this container contains
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # store the references to the contained models
+        self._contained_components = []
+        for c in self.contained_components:
+            self._contained_components.append(self._model_engine.models[c])
+        
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self):
+        # reset the starting volume to the additional volume of the container 
+        self.vol = self.vol_extra
+
+        # get the cummulative volume from all contained models and add it to the volume of the container
+        for c in self._contained_components:
+            self.vol += c.vol
+
+        # incorporate the scaling factor
+        _el_base = self.el_base * self.el_base_scaling_factor
+        _el_k_base = self.el_k * self.el_k_scaling_factor
+        _u_vol_base = self.u_vol * self.u_vol_scaling_factor
+
+        # incorporate the other factors
+        _el = (
+            _el_base
+            + (self.el_base_factor - 1) * _el_base
+        )
+        _el_k = (
+            _el_k_base
+            + (self.el_k_factor - 1) * _el_k_base
+        )
+        _u_vol = (
+            _u_vol_base
+            + (self.u_vol_factor - 1) * _u_vol_base
+        )
+
+        # calculate the current pressure of the container
+        self.pres_in = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol)
+
+        # calculate the total pressure
+        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
+
+        # transfer the container pressure to the contained components
+        for c in self._contained_components:
+            c.pres_ext += self.pres
+
+        # reset the external pressure
+        self.pres_ext = 0.0
+        self.act_factor = 0.0
+
+class GasDiffusor(BaseModelClass):
+    pass
+
+class GasExchanger(BaseModelClass):
+    '''
+    The GasExcvhanger model handles the diffusion of gasses between a gas containing model and a blood containing model
+    (e.g. GasCapacitance and BloodCapacitance). The diffusion between the gasses o2 and co2 are partial pressure driven.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.dif_o2: float = 0.0                        # diffusion constant for oxygen (mmol/mmHg * s)
+        self.dif_co2: float = 0.0                       # diffusion constant for carbon dioxide (mmol/mmHg * s)
+        self.comp_blood: str = ""                       # name of the blood component                
+        self.comp_gas: str = ""                         # name of the gas component
+        
+        # -----------------------------------------------
+        # factors
+        self.dif_o2_factor: float = 1.0                 # factor modifying the oxygen diffusion constant
+        self.dif_o2_scaling_factor: float = 1.0         # factor scaling the oxygen diffusion constant
+
+        self.dif_co2_factor: float = 1.0                # factor modifying the carbon diffusion constant
+        self.dif_co2_scaling_factor: float = 1.0        # factor scaling the carbion dioxied diffusion constant
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.flux_o2 = 0.0                              # oxygen flux (mmol)
+        self.flux_co2 = 0.0                             # carbon dioxide flux (mmol)
+
+        # -----------------------------------------------
+        # local variables
+        self._blood: object = None                      # reference to the blood component
+        self._gas: object = None                        # reference to the gas component
+        self._calc_blood_composition: object = None     # reference to the calc_blood_composition function of the Blood model
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # find the up- and downstream components
+        self._blood = self._model_engine.models[self.comp_blood]
+        self._gas = self._model_engine.models[self.comp_gas]
+
+        # find a reference to the blood component
+        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
+        
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # set the blood composition of the blood component
+        self._calc_blood_composition(self._blood)
+
+         # get the partial pressures and gas concentrations from the components
+        po2_blood = self._blood.po2
+        pco2_blood = self._blood.pco2
+        to2_blood = self._blood.to2
+        tco2_blood = self._blood.tco2
+
+        co2_gas = self._gas.co2
+        cco2_gas = self._gas.cco2
+        po2_gas = self._gas.po2
+        pco2_gas = self._gas.pco2
+
+        if self._blood.vol == 0.0:
+            return
+        
+        # calculate the O2 flux from the blood to the gas compartment
+        self.flux_o2 = ((po2_blood - po2_gas) * self.dif_o2 * self.dif_o2_factor * self.dif_o2_scaling_factor * self._t)
+
+        # calculate the new O2 concentrations of the gas and blood compartments
+        new_to2_blood = (to2_blood * self._blood.vol - self.flux_o2) / self._blood.vol
+        if new_to2_blood < 0:
+            new_to2_blood = 0.0
+
+        new_co2_gas = (co2_gas * self._gas.vol + self.flux_o2) / self._gas.vol
+        if new_co2_gas < 0:
+            new_co2_gas = 0.0
+
+        # calculate the CO2 flux from the blood to the gas compartment
+        self.flux_co2 = ((pco2_blood - pco2_gas) * self.dif_co2 * self.dif_co2_factor * self.dif_co2_scaling_factor * self._t)
+
+        # calculate the new CO2 concentrations of the gas and blood compartments
+        new_tco2_blood = (tco2_blood * self._blood.vol - self.flux_co2) / self._blood.vol
+        if new_tco2_blood < 0:
+            new_tco2_blood = 0.0
+
+        new_cco2_gas = (cco2_gas * self._gas.vol + self.flux_co2) / self._gas.vol
+        if new_cco2_gas < 0:
+            new_cco2_gas = 0.0
+
+        # transfer the new concentrations
+        self._blood.to2 = new_to2_blood
+        self._blood.tco2 = new_tco2_blood
+        self._gas.co2 = new_co2_gas
+        self._gas.cco2 = new_cco2_gas
+
+class Resistor(BaseModelClass):
+    '''
+    A resistor is a model object which connects two Capacitances or TimeVaryingElastances and 
+    models the flow between them based on the pressure difference and the resistance value.
+    '''
+
+    def __init__(self, model_ref: object, name: str) -> None:
+        # initialize the BaseModelClass
+        super().__init__(model_ref, name)
+
+        # ---------------------------------------------------------------------------------------------------------------
+        # initialize independent properties
+        self.r_for:float  = 1.0                         # forward flow resistance Rf (mmHg/l*s)
+        self.r_back: float = 1.0                        # backward flow resistance Rb (mmHg/l*s )
+        self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
+        self.comp_from: str = ""                        # holds the name of the upstream component
+        self.comp_to: str = ""                          # holds the name of the downstream component
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.flow: float = 0.0                          # flow f(t) (L/s)
+        self._comp_from_ref: object = None              # holds a reference to the upstream component
+        self._comp_to_ref: object = None                # holds a reference to the downstream component
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # call the parent init_model method to set the properties of this model as provided by the args dictionary
+        super().init_model(**args)
+
+        # get references to the connected components for faster access during model calculations
+        self._comp_from_ref = self._model_engine.models[self.comp_from]
+        self._comp_to_ref = self._model_engine.models[self.comp_to]
+
+    def calc_model(self) -> None:
+        # calculate the flow based on the pressures of the connected capacitances and the resistance values
+        self.flow = self.calc_flow(
+            self._comp_from_ref.pres, 
+            self._comp_to_ref.pres, 
+            self.r_for, 
+            self.r_back, 
+            self.r_k, 
+            self.flow
+        )
+
+        # update the volumes of the connected capacitances based on the calculated flow
+        self.update_volumes(self.flow)
+
+    def calc_flow(self, p1_t: float, p2_t: float, Rf: float, Rb: float, K1: float, f_t: float) -> float:
+        # calculate and return the flow based on the pressures and resistance values
+        if (p1_t - p2_t) >= 0:
+            return ((p1_t - p2_t) - K1 * (f_t ** 2)) / Rf
+        else:
+            return ((p1_t - p2_t) + K1 * (f_t ** 2)) / Rb
+        
+    def update_volumes(self, flow: float) -> None:
+        if flow >= 0:
+            self._comp_from_ref.volume_out(flow * self._t)
+            self._comp_to_ref.volume_in(flow * self._t, self._comp_from_ref)
+        else:
+            self._comp_from_ref.volume_in(-flow * self._t, self._comp_to_ref)
+            self._comp_to_ref.volume_out(-flow * self._t)
+
+class TimeVaryingElastance(BaseModelClass):
+    '''
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # ----------------------------------------------------------------
+        # initialize independent properties which will be set when the init_model method is called
+        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
+        self.el_min: float = 0.0                        # minimal elastance Emin in (mmHg/L)
+        self.el_max: float = 0.0                        # maximal elastance emax(n) in (mmHg/L)
+        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.pres_ext: float = 0.0                      # external pressure p2(t) in mmHg
+        self.act_factor: float = 0.0                    # activation factor from the heart model (unitless)
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.vol: float = 0.0                           # volume v(t) (L)
+        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
+
+    def calc_model(self) -> None:
+        # calculate the pressure of the capacitance based on the current volume and the elastance properties
+        self.pres = self.calc_pressure(self.vol, self.u_vol, self.el_base, self.el_k, self.pres_ext, self.act_factor)
+
+        # reset the external pressure as this is updated every model step
+        self.pres_ext = 0.0
+
+    def calc_pressure(self, v_t:float, UV:float, E_min: float, e_max: float, K2: float, p2_t, a_t) -> float:
+        # calculate the pressure
+        p_ed_t = K2 * (v_t - UV)**2 + E_min * (v_t - UV)
+        p_ms_t= e_max * (v_t - UV)
+        return p_ms_t - p_ed_t * a_t + p_ed_t +  p2_t
+
+    def volume_in(self, dv: float, comp_from: object) -> None:
+        # change the volume of the capacitance by the amount dv. This function can be called by other model objects like a Resistor object
+        self.vol += dv
+
+    def volume_out(self, dv: float) -> None:
+        # change the volume of the capacitance by the amount dv. This function can be called by other model objects like a Resistor object
+        self.vol -= dv
+
+#----------------------------------------------------------------------------------------------------------------------------
+# explain specialized models
+class Ans(BaseModelClass):
+    '''
+    The autonomic nervous system model uses Afferent (sensor) and Efferent (effect) pathways to control the respiration and circulation. 
+    It does this by taking the outputs of the Afferent (sensor) pathways (normalized receptor firing rate 0 - 1), assign an effect weight to the output 
+    and transfer the effect to the associated Efferent (effect) Pathway. 
+    Using this very flexible principle the ANS model controls the heart rate, heart contraction, venous volume, systemic and pulmonary vascular resistance 
+    and elastance and the minute volume.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # independent properties
+        self.ans_active: bool = True                    # flag whether the ans is effect or not
+        self.pathways: list = []                        # list of pathways the ANS model uses
+
+        # -----------------------------------------------
+        # local properties
+        self._update_interval: float = 0.015            # update interval of the ANS, for performance reasons this is slower then the modeling step size (s)
+        self._update_counter: float = 0.0               # update counter (s)                   
+        self._pathways = {}                             # pathways with the stored references to the Afferent (sensor) and Efferent (effector) pathways
+        self._calc_blood_composition = None             # reference to the calc_blood_composition function of the Blood model
+        self._ascending_aorta = None                    # reference to the ascending aorta.
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # Initialize the pathways with references to the necessary models
+        for pathway in self.pathways:
+            self._pathways[pathway["name"]] = {
+                # store a reference to the Afferent (sensor)
+                "sensor": self._model_engine.models[pathway["sensor"]],
+                # store a reference to the Efferent (effector)
+                "effector": self._model_engine.models[pathway["effector"]],
+                # store whether or not the pathway is activae
+                "active": pathway["active"],
+                # store the pathway effect weight
+                "effect_weight": pathway["effect_weight"],
+                # initialize a state variable for the pathway activity
+                "pathway_activity": 0.0,
+            }
+
+        # Reference the blood composition calculation method
+        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
+
+        # Reference the models on which the ANS depends
+        self._ascending_aorta = self._model_engine.models["AA"]
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self):
+        # return if ans is not active
+        if not self.ans_active:
+            return
+        
+        # increase the update counter
+        self._update_counter += self._t
+        # is it time to run the calculations?
+        if self._update_counter >= self._update_interval:
+            # reset the update counter
+            self._update_counter = 0.0
+
+            # calculate the necessary bloodgasses for the ANS
+            self._calc_blood_composition(self._ascending_aorta)
+            
+            # connect the afferent (sensor) with the efferent (effector)
+            for _, pathway in self._pathways.items():
+                if pathway["active"]:
+                    # get the firing rate from the Afferent pathway
+                    _firing_rate_afferent = pathway["sensor"].firing_rate
+                    # get the effect size 
+                    _effect_size = pathway["effect_weight"]
+                    # transfer the receptor firing rate and effect size to the effector
+                    pathway["effector"].update_effector(_firing_rate_afferent, _effect_size)
+
+class AnsAfferent(BaseModelClass):
+    '''
+    The Afferent class models an autonomic nervous system afferent (sensor) pathway. It is a sensor which generates a normalized receptor firing rate (0-1) 
+    depending on the value of it's input. It has a setpoint, minimal and maximal value. 
+    At the setpoint the firing rate is 0.5, at the maximal value the firing rate 1.0 and 0.0 at the minimal firing rate. 
+    It also incorporates a time constant on the changes of the firing rate.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties which will be set when the init_model method is called
+        self.input: str = ""                            # name of the input using dot notation (e.g. AA.po2)    
+        self.min_value: float = 0.0                     # minimum of the input (firing rate is 0.0)
+        self.set_value: float = 0.0                     # setpoint of the input (firing rate is 0.5)
+        self.max_value: float = 0.0                     # maximum of the input (firing rate is 1.0)
+        self.time_constant: float = 1.0                 # time constant of the firing rate change (s)
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.input_value: float = 0.0                   # input value
+        self.firing_rate: float = 0.0                   # normalized receptor firing rate (0 - 1)
+
+        # -----------------------------------------------
+        # local properties
+        self._update_interval: float = 0.015             # update interval of the receptor (s)
+        self._update_counter: float = 0.0                # counter of the update interval (s)
+        self._max_firing_rate: float = 1.0               # maximum normalized firing rate 1.0
+        self._set_firing_rate: float = 0.5               # setpoint normalized firing rate 0.5
+        self._min_firing_rate: float = 0.0               # minimum normalized firing rate 0.0
+        self._input_site: object = None                  # reference to the input model
+        self._input_prop: str = ""                       # reference to the input property
+        self._gain: float = 0.0                          # gain of the firing rate
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # Get a reference to the input site
+        model, prop = self.input.split(".")
+        self._input_site = self._model_engine.models[model]
+        self._input_prop = prop
+
+        # Set the initial values
+        self.current_value = getattr(self._input_site, self._input_prop)
+        self.firing_rate = self._set_firing_rate
+        
+        # Flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # for performance reasons, the update is done only every 15 ms instead of every step
+        self._update_counter += self._t
+        if self._update_counter >= self._update_interval:
+            self._update_counter = 0.0
+
+            # get the input value
+            self.input_value = getattr(self._input_site, self._input_prop)
+
+            # Calculate the activation value
+            if self.input_value > self.max_value:
+                _activation = self.max_value - self.set_value
+            elif self.input_value < self.min_value:
+                _activation = self.min_value - self.set_value
+            else:
+                _activation = self.input_value - self.set_value
+
+            # Calculate the gain
+            if _activation > 0:
+                # Calculate the gain for positive activation
+                self._gain = (self._max_firing_rate - self._set_firing_rate) / (self.max_value - self.set_value)
+            else:
+                # Calculate the gain for negative activation
+                self._gain = (self._set_firing_rate - self._min_firing_rate) / (self.set_value - self.min_value)
+
+            # Calculate the firing rate of the receptor
+            _new_firing_rate = self._set_firing_rate + self._gain * _activation
+
+            # Incorporate the time constant to calculate the firing rate
+            self.firing_rate = self._update_interval * ((1.0 / self.time_constant) * (-self.firing_rate + _new_firing_rate)) + self.firing_rate
+
+class AnsEfferent(BaseModelClass):
+    '''
+    The Efferent class models an autonomic nervous system efferent (effect) pathway and can be difficult to understand. 
+    It can take in (multiple) normalized firing rates (0-1), calculates the average firing rate and translates this to an effect size on the target by using 
+    an activation function with the gain depending on the minimal at maximal effect sizes. The effect size change is also modified by a time constant. 
+    The effect size is then transferred to the Effector target by setting the ans factor of the target. 
+    
+    For example: the effect on the heartrate has an effect_at_max_firing_rate of 0.428 and a effect_at_min_firing_rate of 1.5. 
+    This means that the effect size on the heartrate (hr_ans_factor) at an average firing rate of 1.0 is 0.428 and 1.5 at an average firing rate of 0.0.
+    This means that when the heart_rate_ref = 110, the heart_rate is about 47 at an avg effector firing rate of 1.0 and 165 at an avg effector firing rate of 0.0
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent parameters
+        self.target: str = ""                           # name of the target using dot notation (e.g. Heart.hr_ans_factor) 
+        self.effect_at_max_firing_rate: float = 0.0     # effect size at average input firing rate of 1.0
+        self.effect_at_min_firing_rate: float = 0.0     # effect size at average input firing rate of 0.0
+        self.tc: float = 0.0                            # time constant of the effect change (s)
+
+        # -----------------------------------------------
+        # initialize dependent parameters
+        self.firing_rate: float = 0.0                   # firing rate (unitless)
+        self.effector: float = 1.0                      # current effector size 
+
+        # -----------------------------------------------
+        # initialize local parameters
+        self._target_model: object = None               # reference to the target model
+        self._target_prop: str = ""                     # name of the parameter of the target model
+        self._update_interval = 0.015                   # update interval of the effector (s)
+        self._update_counter = 0.0                      # update counter (s)
+        self._cum_firing_rate: float = 0.0              # cummulative firing rate of the model step
+        self._cum_firing_rate_counter = 1.0             # counter for number of inputs
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # get a reference to the target model property
+        model, prop = self.target.split(".")
+        self._target_model = self._model_engine.models[model]
+        self._target_prop = prop
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+
+    def calc_model(self) -> None:
+        # for performance reasons, the update is done only every 15 ms instead of every step
+        self._update_counter += self._t
+        if self._update_counter >= self._update_interval:
+            self._update_counter = 0.0
+
+            # Determine the total average firing rate as the firing rate can be set by multiple pathways
+            self.firing_rate = 0.5
+            if self._cum_firing_rate_counter > 0.0:
+                self.firing_rate = self._cum_firing_rate / self._cum_firing_rate_counter
+
+            # Translate the average firing rate to the effect factor. 
+            # If the firing rate is aboven 0.5 use the mxe_high parameter, otherwise use the mxe_low parameter
+            if self.firing_rate >= 0.5:
+                effector = 1.0 + ((self.effect_at_max_firing_rate - 1.0) / 0.5) * (self.firing_rate - 0.5)
+            else:
+                effector = self.effect_at_min_firing_rate + ((1.0 - self.effect_at_min_firing_rate) / 0.5) * self.firing_rate
+
+            # Incorporate the time constant for the effector change
+            self.effector = (self._update_interval * ((1.0 / self.tc) * (-self.effector + effector)) + self.effector)
+
+            # Transfer the effect factor to the target model
+            setattr(self._target_model, self._target_prop, self.effector)
+
+            # Reset the effect factor and number of effectors
+            self._cum_firing_rate = 0.5
+            self._cum_firing_rate_counter = 0.0
+
+    # update effector firing rate
+    def update_effector(self, new_firing_rate, weight) -> None:
+        # increase the firing rate with a value determing on the
+        self._cum_firing_rate += (new_firing_rate - 0.5) * weight
+        self._cum_firing_rate_counter += 1.0
 
 class Blood(BaseModelClass):
     '''
@@ -553,487 +1226,6 @@ class BloodCapacitance(BaseModelClass):
         # return zero as all volume in dvol is removed from the capactitance
         return 0.0
 
-class BloodTimeVaryingElastance(BaseModelClass):
-    '''
-    The blood time-varying elastance model is an extension of the time-varying elastance model.
-    The timevarying elastance model is extended by incorporating routines in the 'volume_in' method which 
-    take care of the transport of blood solutes and gasses. It also holds parameters for acidbase and oxygenation routines.
-    The solutes in a BloodTimeVaryingElastance are set by the Blood model during setup and initialization.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties which will be set when the init_model method is called
-        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
-        self.el_min: float = 0.0                        # minimal elastance Emin in (mmHg/L)
-        self.el_max: float = 0.0                        # maximal elastance emax(n) in (mmHg/L)
-        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
-        self.pres_ext: float = 0.0                      # external pressure p2(t) in mmHg
-        self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg) 
-        self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
-        self.temp: float = 0.0                          # blood temperature (dgs C)
-        self.viscosity: float = 6.0                     # blood viscosity (centiPoise = Pa * s)
-        self.solutes: dict = {}                         # dictionary holding all solutes
-        self.drugs: dict = {}                           # dictionary holding all drug concentrations
-
-         # -> general factors 
-        self.act_factor: float = 0.0                    # activation factor from the heart model (unitless)
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
-
-        # -> unstressed volume factors
-        self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
-        self.u_vol_scaling_factor: float = 1.0          # factor for scaling the unstressed volume
-        self.u_vol_ans_factor: float = 1.0              # factor of the ans model influence on the unstressed volume
-        self.u_vol_drug_factor: float = 1.0             # factor of the drug model influence
-
-        # -> elastance factors
-        self.el_min_factor: float = 1.0                 # factor changing the baseline elastance
-        self.el_min_scaling_factor: float = 1.0         # factor for scaling the baseline elastance
-        self.el_min_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
-        self.el_min_drug_factor: float = 1.0            # factor of the drug model influence
-        self.el_min_drug_factor: float = 1.0            # factor of the drug model influence
-        self.el_min_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
-
-        self.el_max_factor: float = 1.0                 # factor changing the baseline elastance
-        self.el_max_scaling_factor: float = 1.0         # factor for scaling the baseline elastance
-        self.el_max_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
-        self.el_max_drug_factor: float = 1.0            # factor of the drug model influence
-        self.el_max_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
-
-        # -> non-linear elastance factors
-        self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
-        self.el_k_scaling_factor: float = 1.0           # factor for scaling the non-linear part of the elastance
-        self.el_k_ans_factor: float = 1.0               # factor of the ans model influence on the non-linear part of the elastance
-        self.el_k_drug_factor: float = 1.0              # factor of the drug model influence
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.vol: float = 0.0                           # volume v(t) (L)
-        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
-        self.pres_in: float = 0.0                       # pressure compared to atmospheric pressure
-        self.to2: float = 0.0                           # total oxygen concentration (mmol/l)
-        self.tco2: float = 0.0                          # total carbon dioxide concentration (mmol/l)
-        self.ph: float = 0.0                            # ph
-        self.pco2: float = 0.0                          # pco2 (mmHg)
-        self.po2: float = 0.0                           # po2 (mmHg)
-        self.so2: float = 0.0                           # o2 saturation
-        self.hco3: float = 0.0                          # bicarbonate concentration (mmol/l)
-        self.be: float = 0.0                            # base excess (mmol/l)
-
-        # -----------------------------------------------
-        # local variables
-
-    def calc_model(self) -> None:
-        # Incorporate the scaling factors
-        _el_min_base = self.el_min * self.el_min_scaling_factor
-        _el_max_base = self.el_max * self.el_max_scaling_factor
-        _el_k_base = self.el_k * self.el_k_scaling_factor
-        _u_vol_base = self.u_vol * self.u_vol_scaling_factor
-
-        # Incorporate the other factors which modify the independent parameters
-        _el_min = (
-            _el_min_base
-            + (self.el_min_factor - 1) * _el_min_base
-            + (self.el_min_ans_factor - 1) * _el_min_base * self.ans_activity_factor
-            + (self.el_min_mob_factor - 1) * _el_min_base
-            + (self.el_min_drug_factor - 1) * _el_min_base
-        )
-        _el_max = (
-            _el_max_base
-            + (self.el_max_factor - 1) * _el_max_base
-            + (self.el_max_ans_factor - 1) * _el_max_base * self.ans_activity_factor
-            + (self.el_max_mob_factor - 1) * _el_max_base
-            + (self.el_max_drug_factor - 1) * _el_max_base
-        )
-
-        _el_k = (
-            _el_k_base
-            + (self.el_k_factor - 1) * _el_k_base
-            + (self.el_k_ans_factor - 1) * _el_k_base * self.ans_activity_factor
-            + (self.el_k_drug_factor - 1) * _el_k_base
-        )
-        _u_vol = (
-            _u_vol_base
-            + (self.u_vol_factor - 1) * _u_vol_base
-            + (self.u_vol_ans_factor - 1) * _u_vol_base * self.ans_activity_factor
-            + (self.u_vol_drug_factor - 1) * _u_vol_base
-        )
-
-        # calculate the recoil pressure of the time varying elastance using the maximal elastance and minimal elastances
-        p_ms = (self.vol - _u_vol) * _el_max
-        p_ed = _el_k * math.pow((self.vol - _u_vol),2) + _el_min * (self.vol - _u_vol)
-        
-        # calculate the current recoil pressure
-        self.pres_in = (p_ms - p_ed) * self.act_factor + p_ed
-        
-        # calculate the total pressure by incorporating the external pressures
-        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
-        
-        # reset the external pressure
-        self.pres_ext = 0.0
-        self.pres_cc = 0.0
-        self.pres_mus = 0.0
-
-    def volume_in(self, dvol: float, comp_from: object) -> None:
-        # add volume to the capacitance
-        self.vol += dvol
-
-        # return if the volume is zero or lower
-        if self.vol <= 0.0:
-            return
-
-        # process the gasses
-        self.to2 += ((comp_from.to2 - self.to2) * dvol) / self.vol
-        self.tco2 += ((comp_from.tco2 - self.tco2) * dvol) / self.vol
-
-        # process the solutes
-        for solute, conc in self.solutes.items():
-            self.solutes[solute] += ((comp_from.solutes[solute] - conc) * dvol) / self.vol
-
-    def volume_out(self, dvol: float) -> float:
-        # remove volume from capacitance
-        self.vol -= dvol
-
-        # return if the volume is zero or lower
-        if self.vol < 0.0:
-            # store the volume which could not be removed. This is a sign of a problem with the modeling stepsize!!
-            _vol_not_removed = -self.vol
-            # set he current volume to zero
-            self.vol = 0.0
-            # return the volume which could not be removed
-            return _vol_not_removed
-        
-        # return zero as all volume in dvol is removed from the capactitance
-        return 0.0
-
-class BloodResistor(BaseModelClass):
-    '''
-    The BloodResistor model is a extension of the Resistor model as described in the paper.
-    A BloodResistor model is a connector between two blood containing models (e.g. BloodCapacitance or BloodTimeVaryingElastance) and
-    the model determines the flow between the two models it connects.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.r_for:float  = 1.0                         # forward flow resistance Rf (mmHg/l*s)
-        self.r_back: float = 1.0                        # backward flow resistance Rb (mmHg/l*s )
-        self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
-        self.comp_from: str = ""                        # holds the name of the upstream component
-        self.comp_to: str = ""                          # holds the name of the downstream component
-        self.no_flow: bool = False                      # flags whether flow is allowed across this resistor
-        self.no_back_flow: bool = False                  # flags whether backflow is allowed across this resistor
-        self.p1_ext: float = 0.0                        # external pressure on the inlet (mmHg)
-        self.p2_ext: float = 0.0                        # external pressure on the outlet (mmHg)
-
-        # general factors
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
-
-        self.r_factor: float = 1.0                      # factor changing the forward and backward resistance
-        self.r_scaling_factor: float = 1.0              # factor for scaling the resistance
-        self.r_mob_factor: float = 1.0                  # factor of the myocardial oxygen balance model influence on the resistance
-        self.r_ans_factor: float = 1.0                  # factor of the autonomic nervous system model influence on the resistance
-        self.r_drug_factor: float = 1.0                 # factor of the drug model influence on the resistance
-
-        self.r_k_factor: float = 1.0                    # factor changing the non-linear part of the resistance
-        self.r_k_scaling_factor: float = 1.0            # factor for scaling the non-linear part of the resistance
-        self.r_k_ans_factor: float = 1.0                # factor of the autonomic nervous system model on the non-linear part of the resistance
-        self.r_k_drug_factor: float = 1.0               # factor of the drug model on the non-linear part of the resistance
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.flow: float = 0.0                          # flow f(t) (L/s)
-
-        # -----------------------------------------------
-        # local variables
-        self._comp_from: object = {}                    # holds a reference to the upstream component
-        self._comp_to: object = {}                      # holds a reference to the downstream component
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the up- and downstream components and store the references
-        self._comp_from = self._model_engine.models[self.comp_from]
-        self._comp_to = self._model_engine.models[self.comp_to]
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # get the pressure of the volume containing compartments which this resistor connects and incorporate the external pressures
-        _p1_t = self._comp_from.pres + self.p1_ext
-        _p2_t = self._comp_to.pres + self.p2_ext
-
-        # reset the external pressures
-        self.p1_ext = 0
-        self.p2_ext = 0
-
-        # incorporate the scaling factors
-        _r_for_base = self.r_for * self.r_scaling_factor
-        _r_back_base = self.r_back * self.r_scaling_factor
-        _r_k_base = self.r_k * self.r_scaling_factor
-
-        # incorporate all factors influencing this resistor
-        _r_for = (
-            _r_for_base
-            + (self.r_factor - 1) * _r_for_base
-            + ((self.r_ans_factor - 1) * _r_for_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_for_base
-            + (self.r_drug_factor - 1) * _r_for_base
-        )
-
-        _r_back = (
-            _r_back_base
-            + (self.r_factor - 1) * _r_back_base
-            + ((self.r_ans_factor - 1) * _r_back_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_back_base
-            + (self.r_drug_factor - 1) * _r_back_base
-        )
-
-        _r_k = (
-            _r_k_base
-            + (self.r_k_factor - 1) * _r_k_base
-            + ((self.r_ans_factor - 1) * _r_k_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_k_base
-            + (self.r_drug_factor - 1) * _r_k_base
-        )
-
-        # make the resistances flow dependent
-        _r_for += _r_k * self.flow * self.flow
-        _r_back += _r_k * self.flow * self.flow
-
-        # reset the current flow as a new value is coming
-        self.flow: float = 0.0
-
-        # return if no flow is allowed across this resistor
-        if (self.no_flow):
-            return
-        
-        # calculate the forward flow between two volume containing blood capacitances or blood time varying elastances
-        if (_p1_t >= _p2_t):
-            self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / _r_for      # flow L/s
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_from.volume_out(self.flow * self._t)
-            self._comp_to.volume_in((self.flow * self._t) - vol_not_removed, self._comp_from)
-            return
-        
-        # calculate the backward flow between two volume containing blood capacitances or blood time varying elastances
-        if (_p1_t < _p2_t and not self.no_back_flow):
-            self.flow = ((_p1_t - _p2_t) + _r_k * math.pow(self.flow, 2)) / _r_back
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_to.volume_out(-self.flow * self._t)
-            self._comp_from.volume_in((-self.flow * self._t) - vol_not_removed, self._comp_to)
-            return
-
-class BloodValve(BaseModelClass):
-    '''
-    The BloodValve model is a extension of the Valve model as described in the paper.
-    A BloodValve model is a connector between two blood containing models (e.g. BloodCapacitance or BloodTimeVaryingElastance) and
-    the model determines the flow between the two models it connects. It generally only allows for forward flow.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.r_for:float  = 1.0                         # forward flow resistance Rf (mmHg/l*s)
-        self.r_back: float = 1.0                        # backward flow resistance Rb (mmHg/l*s )
-        self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
-        self.comp_from: str = ""                        # holds the name of the upstream component
-        self.comp_to: str = ""                          # holds the name of the downstream component
-        self.no_flow: bool = False                      # flags whether flow is allowed across this valve
-        self.no_back_flow: bool = True                  # flags whether backflow is allowed across this valve
-        self.p1_ext: float = 0.0                        # external pressure on the inlet (mmHg)
-        self.p2_ext: float = 0.0                        # external pressure on the outlet (mmHg)
-
-        # general factors
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
-
-        self.r_factor: float = 1.0                      # factor changing the forward and backward valve resistance
-        self.r_scaling_factor: float = 1.0              # factor for scaling the valve resistance
-        self.r_mob_factor: float = 1.0                  # factor of the myocardial oxygen balance model influence on the valve resistance
-        self.r_ans_factor: float = 1.0                  # factor of the autonomic nervous system model influence on the valve resistance
-        self.r_drug_factor: float = 1.0                 # factor of the drug model influence on the resistance
-
-        self.r_k_factor: float = 1.0                    # factor changing the non-linear part of the valve resistance
-        self.r_k_scaling_factor: float = 1.0            # factor for scaling the non-linear part of the valve resistance
-        self.r_k_ans_factor: float = 1.0                # factor of the autonomic nervous system model on the non-linear part of the valve resistance
-        self.r_k_drug_factor: float = 1.0               # factor of the drug model on the non-linear part of the valve resistance
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.flow: float = 0.0                          # flow f(t) (L/s)
-
-        # -----------------------------------------------
-        # local variables
-        self._comp_from: object = {}                    # holds a reference to the upstream component
-        self._comp_to: object = {}                      # holds a reference to the downstream component
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the up- and downstream components and store the references
-        self._comp_from = self._model_engine.models[self.comp_from]
-        self._comp_to = self._model_engine.models[self.comp_to]
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # get the pressure of the volume containing compartments which this valve connects and incorporate the external pressures
-        _p1_t = self._comp_from.pres + self.p1_ext
-        _p2_t = self._comp_to.pres + self.p2_ext
-
-        # reset the external pressures
-        self.p1_ext = 0
-        self.p2_ext = 0
-
-        # incorporate the scaling factors
-        _r_for_base = self.r_for * self.r_scaling_factor
-        _r_back_base = self.r_back * self.r_scaling_factor
-        _r_k_base = self.r_k * self.r_scaling_factor
-
-        # incorporate all factors influencing this valve
-        _r_for = (
-            _r_for_base
-            + (self.r_factor - 1) * _r_for_base
-            + ((self.r_ans_factor - 1) * _r_for_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_for_base
-            + (self.r_drug_factor - 1) * _r_for_base
-        )
-
-        _r_back = (
-            _r_back_base
-            + (self.r_factor - 1) * _r_back_base
-            + ((self.r_ans_factor - 1) * _r_back_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_back_base
-            + (self.r_drug_factor - 1) * _r_back_base
-        )
-
-        _r_k = (
-            _r_k_base
-            + (self.r_k_factor - 1) * _r_k_base
-            + ((self.r_ans_factor - 1) * _r_k_base) * self.ans_activity_factor
-            + (self.r_mob_factor - 1) * _r_k_base
-            + (self.r_drug_factor - 1) * _r_k_base
-        )
-
-        # make the resistances flow dependent
-        _r_for += _r_k * self.flow * self.flow
-        _r_back += _r_k * self.flow * self.flow
-
-        # reset the current flow as a new value is coming
-        self.flow: float = 0.0
-
-        # return if no flow is allowed across this valve
-        if (self.no_flow):
-            return
-        
-        # calculate the forward flow between two volume containing blood capacitances or blood time varying elastances
-        if (_p1_t >= _p2_t):
-            self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / _r_for      # flow L/s
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_from.volume_out(self.flow * self._t)
-            self._comp_to.volume_in((self.flow * self._t) - vol_not_removed, self._comp_from)
-            return
-        
-        # calculate the backward flow between two volume containing blood capacitances or blood time varying elastances
-        if (_p1_t < _p2_t and not self.no_back_flow):
-            self.flow = ((_p1_t - _p2_t) + _r_k * math.pow(self.flow, 2)) / _r_back
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_to.volume_out(-self.flow * self._t)
-            self._comp_from.volume_in((-self.flow * self._t) - vol_not_removed, self._comp_to)
-            return
-
-class BloodDiffusor(BaseModelClass):
-    '''
-    The BloodDiffusor model handles the diffusion of gasses and solutes between two blood containing models 
-    (e.g. BloodCapacitance and BloodTimeVaryingElastance). The diffusion between the gasses
-    o2 and co2 are partial pressure driven and the diffusion between solutes is concentration driven.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties which will be set when the init_model method is called
-        self.comp_blood1: str = "PLF"                   # name of the first blood containing model
-        self.comp_blood2: str = "PLM"                   # name of the second blood containing model
-        self.dif_o2: float = 0.01                       # diffusion constant for o2 (mmol/mmHg * s)
-        self.dif_co2: float = 0.01                      # diffusion constant for co2 (mmol/mmHg * s)
-        self.dif_solutes: dict = {}                     # diffusion constants for the different solutes (mmol/mmol * s)
-
-        # factors
-        self.dif_o2_factor: float = 1.0                 # factor influencing the diffusion constant for o2
-        self.dif_o2_scaling_factor: float = 1.0         # scaling factor for the diffusion constant for o2
-        self.dif_co2_factor: float = 1.0                # factor influencing the diffusion constant for co2
-        self.dif_co2_scaling_factor: float = 1.0        # scaling factor for the diffusion constant for co2
-        self.dif_solutes_factor: float = 1.0            # factor influencing the diffusion constant for all solutes
-        self.dif_solutes_scaling_factor: float = 1.0    # scaling factor for the diffusion constant for all solutes      
-
-        # -----------------------------------------------
-        # initialize dependent properties
-
-        # -----------------------------------------------
-        # local variables
-        self._calc_blood_composition: object = None             # holds a reference to the calc_blood_composition function of the Blood model
-        self._comp_blood1: object = None                        # holds a reference to the first blood containing model
-        self._comp_blood2: object = None                        # holds a reference to the second blood containing model
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the two blood containing models and store a reference
-        self._comp_blood1 = self._model_engine.models[self.comp_blood1]
-        self._comp_blood2 = self._model_engine.models[self.comp_blood2]
-
-        # store a reference to the calc_blood_composition function of the Blood model
-        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-
-    def calc_model(self):
-        # calculate the blood composition of the blood components in this diffusor as we need the partial pressures for the gasses diffusion
-        self._calc_blood_composition(self._comp_blood1)
-        self._calc_blood_composition(self._comp_blood2)
-
-        # incorporate the factors
-        _dif_o2 = self.dif_o2 * self.dif_o2_scaling_factor * self.dif_o2_factor
-        _dif_co2 = self.dif_co2 * self.dif_co2_scaling_factor * self.dif_co2_factor
-
-        # diffuse the gasses where the diffusion is partial pressure driven
-        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t * self.dif_o2_factor
-        # update the concentrations
-        self._comp_blood1.to2 = ((self._comp_blood1.to2 * self._comp_blood1.vol) - do2) / self._comp_blood1.vol
-        self._comp_blood2.to2 = ((self._comp_blood2.to2 * self._comp_blood2.vol) + do2) / self._comp_blood2.vol
-
-        dco2 = (self._comp_blood1.pco2 - self._comp_blood2.pco2) * _dif_co2 * self._t * self.dif_co2_factor
-        # update the concentrations
-        self._comp_blood1.tco2 = ((self._comp_blood1.tco2 * self._comp_blood1.vol) - dco2) / self._comp_blood1.vol
-        self._comp_blood2.tco2 = ((self._comp_blood2.tco2 * self._comp_blood2.vol) + dco2) / self._comp_blood2.vol
-
-        # diffuse the solutes where the diffusion is concentration gradient driven
-        for sol, dif in self.dif_solutes.items():
-            dif = dif * self.dif_solutes_factor * self.dif_solutes_scaling_factor
-            # diffuse the solute which is concentration driven
-            dsol = (self._comp_blood1.solutes[sol] - self._comp_blood2.solutes[sol]) * dif * self._t
-            # update the concentration
-            self._comp_blood1.solutes[sol] = ((self._comp_blood1.solutes[sol] * self._comp_blood1.vol) - dsol) / self._comp_blood1.vol
-            self._comp_blood2.solutes[sol] = ((self._comp_blood2.solutes[sol] * self._comp_blood2.vol) + dsol) / self._comp_blood2.vol
-
 class BloodPump(BaseModelClass):
     '''
     The BloodPump model is a BloodCapacitance model which an extension by which it can generate a pressure gradient
@@ -1194,6 +1386,551 @@ class BloodPump(BaseModelClass):
         
         # return zero as all volume in dvol is removed from the capactitance
         return 0.0
+
+class BloodTimeVaryingElastance(BaseModelClass):
+    '''
+    The blood time-varying elastance model is an extension of the time-varying elastance model.
+    The timevarying elastance model is extended by incorporating routines in the 'volume_in' method which 
+    take care of the transport of blood solutes and gasses. It also holds parameters for acidbase and oxygenation routines.
+    The solutes in a BloodTimeVaryingElastance are set by the Blood model during setup and initialization.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties which will be set when the init_model method is called
+        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
+        self.el_min: float = 0.0                        # minimal elastance Emin in (mmHg/L)
+        self.el_max: float = 0.0                        # maximal elastance emax(n) in (mmHg/L)
+        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.pres_ext: float = 0.0                      # external pressure p2(t) in mmHg
+        self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg) 
+        self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
+        self.temp: float = 0.0                          # blood temperature (dgs C)
+        self.viscosity: float = 6.0                     # blood viscosity (centiPoise = Pa * s)
+        self.solutes: dict = {}                         # dictionary holding all solutes
+        self.drugs: dict = {}                           # dictionary holding all drug concentrations
+
+         # -> general factors 
+        self.act_factor: float = 0.0                    # activation factor from the heart model (unitless)
+        self.ans_activity_factor: float = 1.0           # general ans activity factor
+
+        # -> unstressed volume factors
+        self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
+        self.u_vol_scaling_factor: float = 1.0          # factor for scaling the unstressed volume
+        self.u_vol_ans_factor: float = 1.0              # factor of the ans model influence on the unstressed volume
+        self.u_vol_drug_factor: float = 1.0             # factor of the drug model influence
+
+        # -> elastance factors
+        self.el_min_factor: float = 1.0                 # factor changing the baseline elastance
+        self.el_min_scaling_factor: float = 1.0         # factor for scaling the baseline elastance
+        self.el_min_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
+        self.el_min_drug_factor: float = 1.0            # factor of the drug model influence
+        self.el_min_drug_factor: float = 1.0            # factor of the drug model influence
+        self.el_min_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
+
+        self.el_max_factor: float = 1.0                 # factor changing the baseline elastance
+        self.el_max_scaling_factor: float = 1.0         # factor for scaling the baseline elastance
+        self.el_max_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
+        self.el_max_drug_factor: float = 1.0            # factor of the drug model influence
+        self.el_max_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
+
+        # -> non-linear elastance factors
+        self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
+        self.el_k_scaling_factor: float = 1.0           # factor for scaling the non-linear part of the elastance
+        self.el_k_ans_factor: float = 1.0               # factor of the ans model influence on the non-linear part of the elastance
+        self.el_k_drug_factor: float = 1.0              # factor of the drug model influence
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.vol: float = 0.0                           # volume v(t) (L)
+        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
+        self.pres_in: float = 0.0                       # pressure compared to atmospheric pressure
+        self.to2: float = 0.0                           # total oxygen concentration (mmol/l)
+        self.tco2: float = 0.0                          # total carbon dioxide concentration (mmol/l)
+        self.ph: float = 0.0                            # ph
+        self.pco2: float = 0.0                          # pco2 (mmHg)
+        self.po2: float = 0.0                           # po2 (mmHg)
+        self.so2: float = 0.0                           # o2 saturation
+        self.hco3: float = 0.0                          # bicarbonate concentration (mmol/l)
+        self.be: float = 0.0                            # base excess (mmol/l)
+
+        # -----------------------------------------------
+        # local variables
+
+    def calc_model(self) -> None:
+        # Incorporate the scaling factors
+        _el_min_base = self.el_min * self.el_min_scaling_factor
+        _el_max_base = self.el_max * self.el_max_scaling_factor
+        _el_k_base = self.el_k * self.el_k_scaling_factor
+        _u_vol_base = self.u_vol * self.u_vol_scaling_factor
+
+        # Incorporate the other factors which modify the independent parameters
+        _el_min = (
+            _el_min_base
+            + (self.el_min_factor - 1) * _el_min_base
+            + (self.el_min_ans_factor - 1) * _el_min_base * self.ans_activity_factor
+            + (self.el_min_mob_factor - 1) * _el_min_base
+            + (self.el_min_drug_factor - 1) * _el_min_base
+        )
+        _el_max = (
+            _el_max_base
+            + (self.el_max_factor - 1) * _el_max_base
+            + (self.el_max_ans_factor - 1) * _el_max_base * self.ans_activity_factor
+            + (self.el_max_mob_factor - 1) * _el_max_base
+            + (self.el_max_drug_factor - 1) * _el_max_base
+        )
+
+        _el_k = (
+            _el_k_base
+            + (self.el_k_factor - 1) * _el_k_base
+            + (self.el_k_ans_factor - 1) * _el_k_base * self.ans_activity_factor
+            + (self.el_k_drug_factor - 1) * _el_k_base
+        )
+        _u_vol = (
+            _u_vol_base
+            + (self.u_vol_factor - 1) * _u_vol_base
+            + (self.u_vol_ans_factor - 1) * _u_vol_base * self.ans_activity_factor
+            + (self.u_vol_drug_factor - 1) * _u_vol_base
+        )
+
+        # calculate the recoil pressure of the time varying elastance using the maximal elastance and minimal elastances
+        p_ms = (self.vol - _u_vol) * _el_max
+        p_ed = _el_k * math.pow((self.vol - _u_vol),2) + _el_min * (self.vol - _u_vol)
+        
+        # calculate the current recoil pressure
+        self.pres_in = (p_ms - p_ed) * self.act_factor + p_ed
+        
+        # calculate the total pressure by incorporating the external pressures
+        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
+        
+        # reset the external pressure
+        self.pres_ext = 0.0
+        self.pres_cc = 0.0
+        self.pres_mus = 0.0
+
+    def volume_in(self, dvol: float, comp_from: object) -> None:
+        # add volume to the capacitance
+        self.vol += dvol
+
+        # return if the volume is zero or lower
+        if self.vol <= 0.0:
+            return
+
+        # process the gasses
+        self.to2 += ((comp_from.to2 - self.to2) * dvol) / self.vol
+        self.tco2 += ((comp_from.tco2 - self.tco2) * dvol) / self.vol
+
+        # process the solutes
+        for solute, conc in self.solutes.items():
+            self.solutes[solute] += ((comp_from.solutes[solute] - conc) * dvol) / self.vol
+
+    def volume_out(self, dvol: float) -> float:
+        # remove volume from capacitance
+        self.vol -= dvol
+
+        # return if the volume is zero or lower
+        if self.vol < 0.0:
+            # store the volume which could not be removed. This is a sign of a problem with the modeling stepsize!!
+            _vol_not_removed = -self.vol
+            # set he current volume to zero
+            self.vol = 0.0
+            # return the volume which could not be removed
+            return _vol_not_removed
+        
+        # return zero as all volume in dvol is removed from the capactitance
+        return 0.0
+
+class BloodVessel(BaseModelClass):
+    pass
+
+class Breathing(BaseModelClass):
+    '''
+    The Breathing model takes care of the spontaneous breathing by calculating the respiratory rate and target tidal volume
+    from the target minute volume which is provided by the autonomic nervous system. It modifies the elastance of the 
+    thoracic cage by setting the act factor of the Thorax model (which is a Container model) parameter in time using the Mecklenburgh function.
+
+    Reference:
+    Mecklenburgh JS, al-Obaidi TA, Mapleson WW. 
+    A model lung with direct representation of respiratory muscle activity. 
+    Br J Anaesth. 1992 Jun;68(6):603-12. doi: 10.1093/bja/68.6.603. PMID: 1610636.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.breathing_enabled: bool = True                 # flags whether spontaneous breathing is enabled or not
+        self.minute_volume_ref: float = 0.2                 # reference minute volume (L/kg/min)
+        self.minute_volume_ref_factor: float = 1.0          # factor influencing the reference minute volume
+        self.minute_volume_ref_scaling_factor: float = 1.0  # scaling factor of the reference minute volume
+        self.vt_rr_ratio: float = 0.0001212                 # ratio between the tidal volume and respiratory rate
+        self.vt_rr_ratio_factor: float = 1.0                # factor influencing the ratio between the tidal volume and respiratory rate
+        self.vt_rr_ratio_scaling_factor: float = 1.0        # scaling factor of the ratio between the tidal volume and respiratory rate 
+        self.rmp_gain_max: float = 50.0                     # maximum elastance change (mmHg/L)
+        self.ie_ratio: float = 0.3                          # ratio of the inspiratory and expiratory time
+        self.mv_ans_factor: float = 1.0                     # factor influencing the minute volume as set by the autonomic nervous system
+        self.ans_activity_factor: float = 1.0               # global factor of the autonomic nervous system activity
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.target_minute_volume: float = 0.0              # target minute volume as set by the autonomic nervous system (L/min/kg)
+        self.resp_rate: float = 36.0                        # calculated respiratory rate (breaths/min)
+        self.target_tidal_volume: float = 0,0               # calculated target tidal volume (L)
+        self.minute_volume: float = 0.0                     # minute volume (L/min)
+        self.exp_tidal_volume: float = 0.0                  # expiratory tidal volume (L)
+        self.insp_tidal_volume: float = 0.0                 # inspiratory tidal volume (L)
+        self.resp_muscle_pressure: float = 0.0              # calculated elastance change (mmHg/L)
+        self.ncc_insp: int = 0                              # counter of the inspiratory phase (unitless)
+        self.ncc_exp: int = 0                               # counter of the expiratory phase (unitless)
+        self.rmp_gain: float = 0.0                          # elastance change gain (mmHg/L)
+
+        # -----------------------------------------------
+        # local properties  
+        self._eMin4: float = math.pow(math.e, -4)           # constant of the Mecklenburgh function
+        self._ti: float = 0.4                               # inspiration time (s)
+        self._te: float = 1.0                               # expiration time (s)
+        self._breath_timer: float = 0.0                     # time of the current breath (s)
+        self._breath_interval: float = 60.0                 # breathing interval (s)
+        self._insp_running: float = False                   # flag whether the inspiration is running or not
+        self._insp_timer: float = 0.0                       # inspiration timer (s)
+        self._temp_insp_volume: float = 0.0                 # volume counter for the inspiratory volume (L)
+        self._exp_running: float = False                    # flag whether the expiratio is running or not
+        self._exp_timer: float = 0.0                        # expiration timer (s)
+        self._temp_exp_volume: float = 0.0                  # volume counter for the expiratory volume (L)
+
+    def calc_model(self):
+        # get the current model weight
+        _weight = self._model_engine.weight
+
+        # calculate the target minute volume
+        _minute_volume_ref = (
+            self.minute_volume_ref
+            * self.minute_volume_ref_factor
+            * self.minute_volume_ref_scaling_factor
+            * _weight
+        )
+
+        # calculate the target minute volume
+        self.target_minute_volume = (_minute_volume_ref + (self.mv_ans_factor - 1.0) * _minute_volume_ref) * self.ans_activity_factor
+
+        # calculate the respiratory rate and target tidal volume from the target minute volume
+        self.vt_rr_controller(_weight)
+
+        # calculate the inspiratory and expiratory time
+        self._breath_interval = 60.0
+        if self.resp_rate > 0:
+            self._breath_interval = 60.0 / self.resp_rate
+            self._ti = self.ie_ratio * self._breath_interval
+            self._te = self._breath_interval - self._ti
+
+        # is it time to start a breath?
+        if self._breath_timer > self._breath_interval:
+            # reset the breath timer
+            self._breath_timer = 0.0
+            # flag that the inspiration is running
+            self._insp_running = True
+            # reset the inspiration timer and counter
+            self._insp_timer = 0.0
+            self.ncc_insp = 0.0
+
+        # has the inspiration time elapsed?
+        if self._insp_timer > self._ti:
+            # reset the inspiration timer
+            self._insp_timer = 0.0
+            # flag that the expiration is running and the inspiration is not
+            self._insp_running = False
+            self._exp_running = True
+            self.ncc_exp = 0.0
+            # reset the expiratory volume counter
+            self._temp_exp_volume = 0.0
+            # store the expiratory volume
+            self.insp_tidal_volume = self._temp_insp_volume
+
+        # has the expiration time elapsed?
+        if self._exp_timer > self._te:
+            # reset the expiration timer
+            self._exp_timer = 0.0
+            # flag that the expiration is not running anymofre
+            self._exp_running = False
+            # reset the inspiratory volume counter
+            self._temp_insp_volume = 0.0
+            # store the expiratory volume
+            self.exp_tidal_volume = -self._temp_exp_volume
+
+            # calculate the rmp gain as we might not have reached the target tidal volume
+            if self.breathing_enabled:
+                # if the target volume is not reached then increase the respiratory muscle gain otherwise lower it
+                if abs(self.exp_tidal_volume) < self.target_tidal_volume:
+                    self.rmp_gain += 0.1
+                if abs(self.exp_tidal_volume) > self.target_tidal_volume:
+                    self.rmp_gain -= 0.1
+                # guard against zero
+                if self.rmp_gain < 0.0:
+                    self.rmp_gain = 0.0
+                # guard the maximum respiratory muscle gain
+                if self.rmp_gain > self.rmp_gain_max:
+                    self.rmp_gain = self.rmp_gain_max
+
+            # store the current minute volume
+            self.minute_volume = self.exp_tidal_volume * self.resp_rate
+
+        # increase the timers
+        self._breath_timer += self._t
+
+        # inpiration
+        if self._insp_running:
+            # increase the inspiration timer and counter
+            self._insp_timer += self._t
+            self.ncc_insp += 1
+            # increase the inspiratory volume
+            if self._model_engine.models["MOUTH_DS"].flow > 0:
+                self._temp_insp_volume += (self._model_engine.models["MOUTH_DS"].flow * self._t)
+
+        # expiration
+        if self._exp_running:
+            # increase the expiration timer and counter
+            self._exp_timer += self._t
+            self.ncc_exp += 1
+            # increase the expiratory volume
+            if self._model_engine.models["MOUTH_DS"].flow < 0:
+                self._temp_exp_volume += (self._model_engine.models["MOUTH_DS"].flow * self._t)
+
+        # reset the respiratory muscle pressure as this is calculated again in every model run
+        self.resp_muscle_pressure = 0.0
+
+        # calculate the new respiratory muscle pressure
+        if self.breathing_enabled:
+            self.resp_muscle_pressure = self.calc_resp_muscle_pressure()
+        else:
+            # reset all state variables when not breathing
+            self.resp_rate = 0.0
+            self.ncc_insp = 0.0
+            self.ncc_exp = 0.0
+            self.target_tidal_volume = 0.0
+            self.resp_muscle_pressure = 0.0
+
+        # transfer the respiratory muscle pressure to the thorax
+        self._model_engine.models["THORAX"].pres_mus = -self.resp_muscle_pressure
+
+    def vt_rr_controller(self, _weight):
+        # calculate the spontaneous resp rate depending on the target minute volume (from ANS) and the set vt-rr ratio
+        self.resp_rate = math.sqrt(self.target_minute_volume / (self.vt_rr_ratio * self.vt_rr_ratio_factor * self.vt_rr_ratio_scaling_factor * _weight))
+
+        # calculate the target tidal volume depending on the target resp rate and target minute volume (from ANS)
+        if self.resp_rate > 0:
+            self.target_tidal_volume = self.target_minute_volume / self.resp_rate
+    
+    def calc_resp_muscle_pressure(self):
+        mp = 0.0
+        # inspiration
+        if self._insp_running:
+            mp = (self.ncc_insp / (self._ti / self._t)) * self.rmp_gain
+
+        # expiration
+        if self._exp_running:
+            mp = ((math.pow(math.e, -4.0 * (self.ncc_exp / (self._te / self._t))) - self._eMin4) / (1.0 - self._eMin4)) * self.rmp_gain
+
+        return mp
+    
+    def switch_breathing(self, state):
+        # switch on/off the spontaneous breathing
+        self.breathing_enabled = state
+
+class Circulation(BaseModelClass):
+    '''
+    The Circulation class is not a model but houses methods that influence groups of models. In case
+    of the circulation class these groups contain models having to do with the blood circulation.
+    E.g. the method change_systemic_vascular_resistance influences the systemic vascular resistance 
+    by setting the r_for_factor, r_back_factor and  the el_base_factor of de BloodResistors and BloodCapacitances 
+    stored in a list called svr_targets.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # independent properties
+        self.syst_art_res_factor: float = 1.0           # systemic arteries resistance factor
+        self.syst_ven_res_factor: float = 1.0           # systemic veins resistance factor
+        self.syst_art_el_factor: float = 1.0            # systemic arteries elastance factor
+        self.syst_ven_el_factor: float = 1.0            # systemic veins elastance factor
+        self.syst_art_u_vol_factor: float = 1.0         # systemic arteries unstressed volume factor
+        self.syst_ven_u_vol_factor: float = 1.0         # systemic veins unstressed volume factor
+
+        self.pulm_art_res_factor: float = 1.0           # pulmonary arteries resistance factor
+        self.pulm_ven_res_factor: float = 1.0           # pulmonary veins resistance factor
+        self.pulm_art_el_factor: float = 1.0            # pulmonary arteries elastance factor
+        self.pulm_ven_el_factor: float = 1.0            # pulmonary veins elastance factor
+        self.pulm_art_u_vol_factor: float = 1.0         # pulmonary arteries unstressed volume factor
+        self.pulm_ven_u_vol_factor: float = 1.0         # pulmonary veins unstressed volume factor
+
+        self.syst_art_res_ans_factor: float = 1.0       # systemic arteries resistance ans factor
+        self.syst_ven_res_ans_factor: float = 1.0       # systemic veins resistance ans factor
+        self.syst_art_el_ans_factor: float = 1.0        # systemic arteries elastance ans factor
+        self.syst_ven_el_ans_factor: float = 1.0        # systemic veins elastance ans factor
+        self.syst_art_u_vol_ans_factor: float = 1.0     # systemic arteries unstressed volume ans factor
+        self.syst_ven_u_vol_ans_factor: float = 1.0     # systemic veins unstressed volume ans factor
+
+        self.pulm_art_res_ans_factor: float = 1.0       # pulmonary arteries resistance ans factor
+        self.pulm_ven_res_ans_factor: float = 1.0       # pulmonary veins resistance ans factor
+        self.pulm_art_el_ans_factor: float = 1.0        # pulmonary arteries elastance ans factor
+        self.pulm_ven_el_ans_factor: float = 1.0        # pulmonary veins elastance ans factor
+        self.pulm_art_u_vol_ans_factor: float = 1.0     # pulmonary arteries unstressed volume ans factor
+        self.pulm_ven_u_vol_ans_factor: float = 1.0     # pulmonary veins unstressed volume ans factor
+
+        # -----------------------------------------------
+        # dependent properties
+        self.total_blood_volume: float = 0.0            # holds the current total blood volume
+
+        # -----------------------------------------------
+        # local properties
+        self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
+        self._update_interval: float = 0.015            # update interval (s)
+        self._update_counter: float = 0.0               # update interval counter (s)
+
+    def calc_model(self) -> None:
+        self._update_counter += self._t
+        if self._update_counter > self._update_interval:
+            self._update_counter = 0.0
+
+            # update the ans factors, as they are continuously set we need to update them
+            for t in self._model_engine.model_groups["syst_arteries"]:
+                t.el_base_ans_factor = self.syst_art_el_ans_factor
+                t.u_vol_ans_factor = self.syst_art_u_vol_ans_factor
+
+            for t in self._model_engine.model_groups["syst_art_resistors"]:
+                t.r_ans_factor = self.syst_art_res_ans_factor
+
+            for t in self._model_engine.model_groups["syst_veins"]:
+                t.el_base_ans_factor = self.syst_ven_el_ans_factor
+                t.u_vol_ans_factor = self.syst_ven_u_vol_ans_factor
+
+            for t in self._model_engine.model_groups["syst_ven_resistors"]:
+                t.r_ans_factor = self.syst_ven_res_ans_factor
+
+            for t in self._model_engine.model_groups["pulm_arteries"]:
+                t.el_base_ans_factor = self.pulm_art_el_ans_factor
+                t.u_vol_ans_factor = self.pulm_art_u_vol_ans_factor
+
+            for t in self._model_engine.model_groups["pulm_art_resistors"]:
+                t.r_ans_factor = self.pulm_art_res_ans_factor
+
+            for t in self._model_engine.model_groups["pulm_veins"]:
+                t.el_base_ans_factor = self.pulm_ven_el_ans_factor
+                t.u_vol_ans_factor = self.pulm_ven_u_vol_ans_factor
+
+            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
+                t.r_ans_factor = self.pulm_ven_res_ans_factor
+
+    def change_pulm_art_elastance(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_art_el_factor = change
+            for t in self._model_engine.model_groups["pulm_arteries"]:
+                    t.el_base_ans_factor = self.pulm_art_el_factor
+    
+    def change_pulm_art_u_vol(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_art_u_vol_factor = change
+            for t in self._model_engine.model_groups["pulm_arteries"]:
+                    t.r_ans_factor = self.pulm_art_u_vol_factor
+
+    def change_pulm_art_resistance(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_art_res_factor = change
+            for t in self._model_engine.model_groups["pulm_art_resistors"]:
+                    t.r_factor = self.pulm_art_res_factor
+             
+    def change_pulm_ven_elastance(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_ven_el_factor = change
+            for t in self._model_engine.model_groups["pulm_veins"]:
+                    t.el_base_ans_factor = self.pulm_ven_el_factor
+    
+    def change_pulm_ven_u_vol(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_ven_u_vol_factor = change
+            for t in self._model_engine.model_groups["pulm_veins"]:
+                    t.r_ans_factor = self.pulm_ven_u_vol_factor
+
+    def change_pulm_ven_resistance(self, change: float) -> None:
+        if change > 0.0:
+            self.pulm_ven_res_factor = change
+            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
+                    t.r_factor = self.pulm_ven_res_factor
+    
+    def change_syst_art_elastance(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_art_el_factor = change
+            for t in self._model_engine.model_groups["syst_arteries"]:
+                    t.el_base_ans_factor = self.syst_art_el_factor
+    
+    def change_syst_art_u_vol(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_art_u_vol_factor = change
+            for t in self._model_engine.model_groups["syst_arteries"]:
+                    t.r_ans_factor = self.syst_art_u_vol_factor
+
+    def change_syst_art_resistance(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_art_res_factor = change
+            for t in self._model_engine.model_groups["syst_art_resistors"]:
+                    t.r_factor = self.syst_art_res_factor
+             
+    def change_syst_ven_elastance(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_ven_el_factor = change
+            for t in self._model_engine.model_groups["syst_veins"]:
+                    t.el_base_ans_factor = self.syst_ven_el_factor
+    
+    def change_syst_ven_u_vol(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_ven_u_vol_factor = change
+            for t in self._model_engine.model_groups["syst_veins"]:
+                    t.r_ans_factor = self.syst_ven_u_vol_factor
+
+    def change_syst_ven_resistance(self, change: float) -> None:
+        if change > 0.0:
+            self.syst_ven_res_factor = change
+            for t in self._model_engine.model_groups["syst_ven_resistors"]:
+                    t.r_factor = self.syst_ven_res_factor
+
+    def get_total_blood_volume(self) -> float:
+        total_volume: float = 0.0
+        # iterate over all blood containing models
+        for _, m in self._model_engine.models.items():
+            if (m.model_type in self._blood_containing_modeltypes):
+                # if the model is enabled then at the current volume to the total volume
+                if (m.is_enabled):
+                    total_volume += m.vol
+
+        # store the current volume
+        self.total_blood_volume = total_volume
+
+        # return the total blood volume
+        return self.total_blood_volume
+
+    def set_total_blood_volume(self, new_blood_volume: float) -> None:
+        # first get the current volume
+        current_blood_volume = self.get_total_blood_volume()
+        # calculate the change in total blood volume
+        blood_volume_change = new_blood_volume / current_blood_volume
+        # iterate over all blood containing models
+        for _, m in self._model_engine.models.items():
+            if (m.model_type in self._blood_containing_modeltypes):
+                if (m.is_enabled):
+                    # change the volume with the blood_volume_change_factor
+                    self._model_engine.models[m].vol = (self._model_engine.models[m].vol * blood_volume_change)
+                    # also change the unstressed volume so that the ratio between volume and unstressed volume does not change!
+                    self._model_engine.models[m].u_vol = (self._model_engine.models[m].u_vol * blood_volume_change)
+        
+        # store the new total blood volume
+        self.total_blood_volume = self.get_total_blood_volume()
+
+class Fluids(BaseModelClass):
+    pass
 
 class Gas(BaseModelClass):
     '''
@@ -1560,318 +2297,6 @@ class GasCapacitance(BaseModelClass):
         self.fn2 = self.cn2 / self.ctotal
         self.fother = self.cother / self.ctotal
 
-class GasResistor(BaseModelClass):
-    '''
-    The GasResistor model is a extension of the Resistor model as described in the paper.
-    A GasResistor model is a connector between two gas containing models (e.g. GasCapacitance) and
-    the model determines the flow between the two models it connects.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.r_for:float  = 1.0                         # forward flow resistance Rf (mmHg/l*s)
-        self.r_back: float = 1.0                        # backward flow resistance Rb (mmHg/l*s )
-        self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
-        self.comp_from: str = ""                        # holds the name of the upstream component
-        self.comp_to: str = ""                          # holds the name of the downstream component
-        self.no_flow: bool = False                      # flags whether flow is allowed across this resistor
-        self.no_back_flow: bool = False                 # flags whether backflow is allowed across this resistor
-
-        # general factors
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
-
-        self.r_factor: float = 1.0                      # factor changing the forward and backward resistance
-        self.r_scaling_factor: float = 1.0              # factor for scaling the resistance
-        self.r_ans_factor: float = 1.0                  # factor of the autonomic nervous system model influence on the resistance
-        self.r_drug_factor: float = 1.0                 # factor of the drug model influence on the resistance
-
-        self.r_k_factor: float = 1.0                    # factor changing the non-linear part of the resistance
-        self.r_k_scaling_factor: float = 1.0            # factor for scaling the non-linear part of the resistance
-        self.r_k_ans_factor: float = 1.0                # factor of the autonomic nervous system model on the non-linear part of the resistance
-        self.r_k_drug_factor: float = 1.0               # factor of the drug model on the non-linear part of the resistance
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.flow: float = 0.0                          # flow f(t) (L/s)
-
-        # -----------------------------------------------
-        # local variables
-        self._comp_from: object = {}                    # holds a reference to the upstream component
-        self._comp_to: object = {}                      # holds a reference to the downstream component
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the up- and downstream components and store the references
-        self._comp_from = self._model_engine.models[self.comp_from]
-        self._comp_to = self._model_engine.models[self.comp_to]
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # get the pressure of the volume containing compartments which this resistor connects and incorporate the external pressures
-        _p1_t = self._comp_from.pres
-        _p2_t = self._comp_to.pres
-
-        # incorporate the scaling factors
-        _r_for_base = self.r_for * self.r_scaling_factor
-        _r_back_base = self.r_back * self.r_scaling_factor
-        _r_k_base = self.r_k * self.r_scaling_factor
-
-        # incorporate all factors influencing this resistor
-        _r_for = (
-            _r_for_base
-            + (self.r_factor - 1) * _r_for_base
-            + ((self.r_ans_factor - 1) * _r_for_base) * self.ans_activity_factor
-            + (self.r_drug_factor - 1) * _r_for_base
-        )
-
-        _r_back = (
-            _r_back_base
-            + (self.r_factor - 1) * _r_back_base
-            + ((self.r_ans_factor - 1) * _r_back_base) * self.ans_activity_factor
-            + (self.r_drug_factor - 1) * _r_back_base
-        )
-
-        _r_k = (
-            _r_k_base
-            + (self.r_k_factor - 1) * _r_k_base
-            + ((self.r_ans_factor - 1) * _r_k_base) * self.ans_activity_factor
-            + (self.r_drug_factor - 1) * _r_k_base
-        )
-
-        # make the resistances flow dependent
-        _r_for += _r_k * self.flow * self.flow
-        _r_back += _r_k * self.flow * self.flow
-
-        # reset the current flow as a new value is coming
-        self.flow: float = 0.0
-
-        # return if no flow is allowed across this resistor
-        if (self.no_flow):
-            return
-        
-        # calculate the forward flow between two volume containing gas capacitances
-        if (_p1_t >= _p2_t):
-            self.flow = ((_p1_t - _p2_t) - _r_k * math.pow(self.flow, 2)) / _r_for      # flow L/s
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_from.volume_out(self.flow * self._t)
-            self._comp_to.volume_in((self.flow * self._t) - vol_not_removed, self._comp_from)
-            return
-        
-        # calculate the backward flow between two volume containing gas capacitances
-        if (_p1_t < _p2_t and not self.no_back_flow):
-            self.flow = ((_p1_t - _p2_t) + _r_k * math.pow(self.flow, 2)) / _r_back
-            # update the volumes of the connected components
-            vol_not_removed = self._comp_to.volume_out(-self.flow * self._t)
-            self._comp_from.volume_in((-self.flow * self._t) - vol_not_removed, self._comp_to)
-            return
-
-class GasExchanger(BaseModelClass):
-    '''
-    The GasExcvhanger model handles the diffusion of gasses between a gas containing model and a blood containing model
-    (e.g. GasCapacitance and BloodCapacitance). The diffusion between the gasses o2 and co2 are partial pressure driven.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.dif_o2: float = 0.0                        # diffusion constant for oxygen (mmol/mmHg * s)
-        self.dif_co2: float = 0.0                       # diffusion constant for carbon dioxide (mmol/mmHg * s)
-        self.comp_blood: str = ""                       # name of the blood component                
-        self.comp_gas: str = ""                         # name of the gas component
-        
-        # -----------------------------------------------
-        # factors
-        self.dif_o2_factor: float = 1.0                 # factor modifying the oxygen diffusion constant
-        self.dif_o2_scaling_factor: float = 1.0         # factor scaling the oxygen diffusion constant
-
-        self.dif_co2_factor: float = 1.0                # factor modifying the carbon diffusion constant
-        self.dif_co2_scaling_factor: float = 1.0        # factor scaling the carbion dioxied diffusion constant
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.flux_o2 = 0.0                              # oxygen flux (mmol)
-        self.flux_co2 = 0.0                             # carbon dioxide flux (mmol)
-
-        # -----------------------------------------------
-        # local variables
-        self._blood: object = None                      # reference to the blood component
-        self._gas: object = None                        # reference to the gas component
-        self._calc_blood_composition: object = None     # reference to the calc_blood_composition function of the Blood model
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the up- and downstream components
-        self._blood = self._model_engine.models[self.comp_blood]
-        self._gas = self._model_engine.models[self.comp_gas]
-
-        # find a reference to the blood component
-        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # set the blood composition of the blood component
-        self._calc_blood_composition(self._blood)
-
-         # get the partial pressures and gas concentrations from the components
-        po2_blood = self._blood.po2
-        pco2_blood = self._blood.pco2
-        to2_blood = self._blood.to2
-        tco2_blood = self._blood.tco2
-
-        co2_gas = self._gas.co2
-        cco2_gas = self._gas.cco2
-        po2_gas = self._gas.po2
-        pco2_gas = self._gas.pco2
-
-        if self._blood.vol == 0.0:
-            return
-        
-        # calculate the O2 flux from the blood to the gas compartment
-        self.flux_o2 = ((po2_blood - po2_gas) * self.dif_o2 * self.dif_o2_factor * self.dif_o2_scaling_factor * self._t)
-
-        # calculate the new O2 concentrations of the gas and blood compartments
-        new_to2_blood = (to2_blood * self._blood.vol - self.flux_o2) / self._blood.vol
-        if new_to2_blood < 0:
-            new_to2_blood = 0.0
-
-        new_co2_gas = (co2_gas * self._gas.vol + self.flux_o2) / self._gas.vol
-        if new_co2_gas < 0:
-            new_co2_gas = 0.0
-
-        # calculate the CO2 flux from the blood to the gas compartment
-        self.flux_co2 = ((pco2_blood - pco2_gas) * self.dif_co2 * self.dif_co2_factor * self.dif_co2_scaling_factor * self._t)
-
-        # calculate the new CO2 concentrations of the gas and blood compartments
-        new_tco2_blood = (tco2_blood * self._blood.vol - self.flux_co2) / self._blood.vol
-        if new_tco2_blood < 0:
-            new_tco2_blood = 0.0
-
-        new_cco2_gas = (cco2_gas * self._gas.vol + self.flux_co2) / self._gas.vol
-        if new_cco2_gas < 0:
-            new_cco2_gas = 0.0
-
-        # transfer the new concentrations
-        self._blood.to2 = new_to2_blood
-        self._blood.tco2 = new_tco2_blood
-        self._gas.co2 = new_co2_gas
-        self._gas.cco2 = new_cco2_gas
-
-class GasDiffusor(BaseModelClass):
-    pass
-
-class Container(BaseModelClass):
-    '''
-    The Container model is a Capacitance model which can contain other volume containing models (e.g. BloodCapacitance of GasCapacitance).
-    The volume of the Container model is determined by the volumes of the models it contains and the Container will transfer it's pressure back to 
-    the models it contains. This allows for modeling of the thoracic cage and pericardium. It also is able to vary it's elastance making it 
-    possible to simulate breathing. This makes the Container a very flexible model being a mix between a Capacitance and a TimeVaryingElastance model.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
-        self.el_base: float = 0.0                       # baseline elastance E of the capacitance in (mmHg/L)
-        self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
-        self.pres_ext: float = 0.0                      # external pressure p2(t) (mmHg)
-        self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg)
-        self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
-        self.vol_extra: float = 0.0                     # additional volume of the container (L)
-        self.contained_components: list = 0.0           # list of names of models this Container contains
-        
-        # -> unstressed volume factors
-        self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
-        self.u_vol_scaling_factor: float = 1.0          # factor for scaling the unstressed volume
-
-        # -> elastance factors
-        self.el_base_factor: float = 1.0                # factor changing the baseline elastance
-        self.el_base_scaling_factor: float = 1.0        # factor for scaling the baseline elastance
-
-        # -> non-linear elastance factors
-        self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
-        self.el_k_scaling_factor: float = 1.0           # factor for scaling the non-linear part of the elastance
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.vol: float = 0.0                           # volume v(t) (L)
-        self.pres: float = 0.0                          # pressure p1(t) (mmHg)
-        self.pres_in: float = 0.0                       # recoil pressure of the elastance (mmHg)
-
-        # -----------------------------------------------
-        # initialize local properties
-        self._contained_components: list = None         # list of references to the models this container contains
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # store the references to the contained models
-        self._contained_components = []
-        for c in self.contained_components:
-            self._contained_components.append(self._model_engine.models[c])
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self):
-        # reset the starting volume to the additional volume of the container 
-        self.vol = self.vol_extra
-
-        # get the cummulative volume from all contained models and add it to the volume of the container
-        for c in self._contained_components:
-            self.vol += c.vol
-
-        # incorporate the scaling factor
-        _el_base = self.el_base * self.el_base_scaling_factor
-        _el_k_base = self.el_k * self.el_k_scaling_factor
-        _u_vol_base = self.u_vol * self.u_vol_scaling_factor
-
-        # incorporate the other factors
-        _el = (
-            _el_base
-            + (self.el_base_factor - 1) * _el_base
-        )
-        _el_k = (
-            _el_k_base
-            + (self.el_k_factor - 1) * _el_k_base
-        )
-        _u_vol = (
-            _u_vol_base
-            + (self.u_vol_factor - 1) * _u_vol_base
-        )
-
-        # calculate the current pressure of the container
-        self.pres_in = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol)
-
-        # calculate the total pressure
-        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
-
-        # transfer the container pressure to the contained components
-        for c in self._contained_components:
-            c.pres_ext += self.pres
-
-        # reset the external pressure
-        self.pres_ext = 0.0
-        self.act_factor = 0.0
-
 class Heart(BaseModelClass):
     '''
     The Heart model takes care of the activation of the TimeVaryingElastances which model the heart (LA, RA, LV and RV).
@@ -2076,448 +2501,8 @@ class Heart(BaseModelClass):
         else:
             return self.qt_time * 2.449
 
-class Breathing(BaseModelClass):
-    '''
-    The Breathing model takes care of the spontaneous breathing by calculating the respiratory rate and target tidal volume
-    from the target minute volume which is provided by the autonomic nervous system. It modifies the elastance of the 
-    thoracic cage by setting the act factor of the Thorax model (which is a Container model) parameter in time using the Mecklenburgh function.
-
-    Reference:
-    Mecklenburgh JS, al-Obaidi TA, Mapleson WW. 
-    A model lung with direct representation of respiratory muscle activity. 
-    Br J Anaesth. 1992 Jun;68(6):603-12. doi: 10.1093/bja/68.6.603. PMID: 1610636.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.breathing_enabled: bool = True                 # flags whether spontaneous breathing is enabled or not
-        self.minute_volume_ref: float = 0.2                 # reference minute volume (L/kg/min)
-        self.minute_volume_ref_factor: float = 1.0          # factor influencing the reference minute volume
-        self.minute_volume_ref_scaling_factor: float = 1.0  # scaling factor of the reference minute volume
-        self.vt_rr_ratio: float = 0.0001212                 # ratio between the tidal volume and respiratory rate
-        self.vt_rr_ratio_factor: float = 1.0                # factor influencing the ratio between the tidal volume and respiratory rate
-        self.vt_rr_ratio_scaling_factor: float = 1.0        # scaling factor of the ratio between the tidal volume and respiratory rate 
-        self.rmp_gain_max: float = 50.0                     # maximum elastance change (mmHg/L)
-        self.ie_ratio: float = 0.3                          # ratio of the inspiratory and expiratory time
-        self.mv_ans_factor: float = 1.0                     # factor influencing the minute volume as set by the autonomic nervous system
-        self.ans_activity_factor: float = 1.0               # global factor of the autonomic nervous system activity
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.target_minute_volume: float = 0.0              # target minute volume as set by the autonomic nervous system (L/min/kg)
-        self.resp_rate: float = 36.0                        # calculated respiratory rate (breaths/min)
-        self.target_tidal_volume: float = 0,0               # calculated target tidal volume (L)
-        self.minute_volume: float = 0.0                     # minute volume (L/min)
-        self.exp_tidal_volume: float = 0.0                  # expiratory tidal volume (L)
-        self.insp_tidal_volume: float = 0.0                 # inspiratory tidal volume (L)
-        self.resp_muscle_pressure: float = 0.0              # calculated elastance change (mmHg/L)
-        self.ncc_insp: int = 0                              # counter of the inspiratory phase (unitless)
-        self.ncc_exp: int = 0                               # counter of the expiratory phase (unitless)
-        self.rmp_gain: float = 0.0                          # elastance change gain (mmHg/L)
-
-        # -----------------------------------------------
-        # local properties  
-        self._eMin4: float = math.pow(math.e, -4)           # constant of the Mecklenburgh function
-        self._ti: float = 0.4                               # inspiration time (s)
-        self._te: float = 1.0                               # expiration time (s)
-        self._breath_timer: float = 0.0                     # time of the current breath (s)
-        self._breath_interval: float = 60.0                 # breathing interval (s)
-        self._insp_running: float = False                   # flag whether the inspiration is running or not
-        self._insp_timer: float = 0.0                       # inspiration timer (s)
-        self._temp_insp_volume: float = 0.0                 # volume counter for the inspiratory volume (L)
-        self._exp_running: float = False                    # flag whether the expiratio is running or not
-        self._exp_timer: float = 0.0                        # expiration timer (s)
-        self._temp_exp_volume: float = 0.0                  # volume counter for the expiratory volume (L)
-
-    def calc_model(self):
-        # get the current model weight
-        _weight = self._model_engine.weight
-
-        # calculate the target minute volume
-        _minute_volume_ref = (
-            self.minute_volume_ref
-            * self.minute_volume_ref_factor
-            * self.minute_volume_ref_scaling_factor
-            * _weight
-        )
-
-        # calculate the target minute volume
-        self.target_minute_volume = (_minute_volume_ref + (self.mv_ans_factor - 1.0) * _minute_volume_ref) * self.ans_activity_factor
-
-        # calculate the respiratory rate and target tidal volume from the target minute volume
-        self.vt_rr_controller(_weight)
-
-        # calculate the inspiratory and expiratory time
-        self._breath_interval = 60.0
-        if self.resp_rate > 0:
-            self._breath_interval = 60.0 / self.resp_rate
-            self._ti = self.ie_ratio * self._breath_interval
-            self._te = self._breath_interval - self._ti
-
-        # is it time to start a breath?
-        if self._breath_timer > self._breath_interval:
-            # reset the breath timer
-            self._breath_timer = 0.0
-            # flag that the inspiration is running
-            self._insp_running = True
-            # reset the inspiration timer and counter
-            self._insp_timer = 0.0
-            self.ncc_insp = 0.0
-
-        # has the inspiration time elapsed?
-        if self._insp_timer > self._ti:
-            # reset the inspiration timer
-            self._insp_timer = 0.0
-            # flag that the expiration is running and the inspiration is not
-            self._insp_running = False
-            self._exp_running = True
-            self.ncc_exp = 0.0
-            # reset the expiratory volume counter
-            self._temp_exp_volume = 0.0
-            # store the expiratory volume
-            self.insp_tidal_volume = self._temp_insp_volume
-
-        # has the expiration time elapsed?
-        if self._exp_timer > self._te:
-            # reset the expiration timer
-            self._exp_timer = 0.0
-            # flag that the expiration is not running anymofre
-            self._exp_running = False
-            # reset the inspiratory volume counter
-            self._temp_insp_volume = 0.0
-            # store the expiratory volume
-            self.exp_tidal_volume = -self._temp_exp_volume
-
-            # calculate the rmp gain as we might not have reached the target tidal volume
-            if self.breathing_enabled:
-                # if the target volume is not reached then increase the respiratory muscle gain otherwise lower it
-                if abs(self.exp_tidal_volume) < self.target_tidal_volume:
-                    self.rmp_gain += 0.1
-                if abs(self.exp_tidal_volume) > self.target_tidal_volume:
-                    self.rmp_gain -= 0.1
-                # guard against zero
-                if self.rmp_gain < 0.0:
-                    self.rmp_gain = 0.0
-                # guard the maximum respiratory muscle gain
-                if self.rmp_gain > self.rmp_gain_max:
-                    self.rmp_gain = self.rmp_gain_max
-
-            # store the current minute volume
-            self.minute_volume = self.exp_tidal_volume * self.resp_rate
-
-        # increase the timers
-        self._breath_timer += self._t
-
-        # inpiration
-        if self._insp_running:
-            # increase the inspiration timer and counter
-            self._insp_timer += self._t
-            self.ncc_insp += 1
-            # increase the inspiratory volume
-            if self._model_engine.models["MOUTH_DS"].flow > 0:
-                self._temp_insp_volume += (self._model_engine.models["MOUTH_DS"].flow * self._t)
-
-        # expiration
-        if self._exp_running:
-            # increase the expiration timer and counter
-            self._exp_timer += self._t
-            self.ncc_exp += 1
-            # increase the expiratory volume
-            if self._model_engine.models["MOUTH_DS"].flow < 0:
-                self._temp_exp_volume += (self._model_engine.models["MOUTH_DS"].flow * self._t)
-
-        # reset the respiratory muscle pressure as this is calculated again in every model run
-        self.resp_muscle_pressure = 0.0
-
-        # calculate the new respiratory muscle pressure
-        if self.breathing_enabled:
-            self.resp_muscle_pressure = self.calc_resp_muscle_pressure()
-        else:
-            # reset all state variables when not breathing
-            self.resp_rate = 0.0
-            self.ncc_insp = 0.0
-            self.ncc_exp = 0.0
-            self.target_tidal_volume = 0.0
-            self.resp_muscle_pressure = 0.0
-
-        # transfer the respiratory muscle pressure to the thorax
-        self._model_engine.models["THORAX"].pres_mus = -self.resp_muscle_pressure
-
-    def vt_rr_controller(self, _weight):
-        # calculate the spontaneous resp rate depending on the target minute volume (from ANS) and the set vt-rr ratio
-        self.resp_rate = math.sqrt(self.target_minute_volume / (self.vt_rr_ratio * self.vt_rr_ratio_factor * self.vt_rr_ratio_scaling_factor * _weight))
-
-        # calculate the target tidal volume depending on the target resp rate and target minute volume (from ANS)
-        if self.resp_rate > 0:
-            self.target_tidal_volume = self.target_minute_volume / self.resp_rate
-    
-    def calc_resp_muscle_pressure(self):
-        mp = 0.0
-        # inspiration
-        if self._insp_running:
-            mp = (self.ncc_insp / (self._ti / self._t)) * self.rmp_gain
-
-        # expiration
-        if self._exp_running:
-            mp = ((math.pow(math.e, -4.0 * (self.ncc_exp / (self._te / self._t))) - self._eMin4) / (1.0 - self._eMin4)) * self.rmp_gain
-
-        return mp
-    
-    def switch_breathing(self, state):
-        # switch on/off the spontaneous breathing
-        self.breathing_enabled = state
-
-class Pda(BaseModelClass):
+class HeartChamber(BaseModelClass):
     pass
-
-class Ans(BaseModelClass):
-    '''
-    The autonomic nervous system model uses Afferent (sensor) and Efferent (effect) pathways to control the respiration and circulation. 
-    It does this by taking the outputs of the Afferent (sensor) pathways (normalized receptor firing rate 0 - 1), assign an effect weight to the output 
-    and transfer the effect to the associated Efferent (effect) Pathway. 
-    Using this very flexible principle the ANS model controls the heart rate, heart contraction, venous volume, systemic and pulmonary vascular resistance 
-    and elastance and the minute volume.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # independent properties
-        self.ans_active: bool = True                    # flag whether the ans is effect or not
-        self.pathways: list = []                        # list of pathways the ANS model uses
-
-        # -----------------------------------------------
-        # local properties
-        self._update_interval: float = 0.015            # update interval of the ANS, for performance reasons this is slower then the modeling step size (s)
-        self._update_counter: float = 0.0               # update counter (s)                   
-        self._pathways = {}                             # pathways with the stored references to the Afferent (sensor) and Efferent (effector) pathways
-        self._calc_blood_composition = None             # reference to the calc_blood_composition function of the Blood model
-        self._ascending_aorta = None                    # reference to the ascending aorta.
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # Initialize the pathways with references to the necessary models
-        for pathway in self.pathways:
-            self._pathways[pathway["name"]] = {
-                # store a reference to the Afferent (sensor)
-                "sensor": self._model_engine.models[pathway["sensor"]],
-                # store a reference to the Efferent (effector)
-                "effector": self._model_engine.models[pathway["effector"]],
-                # store whether or not the pathway is activae
-                "active": pathway["active"],
-                # store the pathway effect weight
-                "effect_weight": pathway["effect_weight"],
-                # initialize a state variable for the pathway activity
-                "pathway_activity": 0.0,
-            }
-
-        # Reference the blood composition calculation method
-        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
-
-        # Reference the models on which the ANS depends
-        self._ascending_aorta = self._model_engine.models["AA"]
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self):
-        # return if ans is not active
-        if not self.ans_active:
-            return
-        
-        # increase the update counter
-        self._update_counter += self._t
-        # is it time to run the calculations?
-        if self._update_counter >= self._update_interval:
-            # reset the update counter
-            self._update_counter = 0.0
-
-            # calculate the necessary bloodgasses for the ANS
-            self._calc_blood_composition(self._ascending_aorta)
-            
-            # connect the afferent (sensor) with the efferent (effector)
-            for _, pathway in self._pathways.items():
-                if pathway["active"]:
-                    # get the firing rate from the Afferent pathway
-                    _firing_rate_afferent = pathway["sensor"].firing_rate
-                    # get the effect size 
-                    _effect_size = pathway["effect_weight"]
-                    # transfer the receptor firing rate and effect size to the effector
-                    pathway["effector"].update_effector(_firing_rate_afferent, _effect_size)
-
-class Afferent(BaseModelClass):
-    '''
-    The Afferent class models an autonomic nervous system afferent (sensor) pathway. It is a sensor which generates a normalized receptor firing rate (0-1) 
-    depending on the value of it's input. It has a setpoint, minimal and maximal value. 
-    At the setpoint the firing rate is 0.5, at the maximal value the firing rate 1.0 and 0.0 at the minimal firing rate. 
-    It also incorporates a time constant on the changes of the firing rate.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties which will be set when the init_model method is called
-        self.input: str = ""                            # name of the input using dot notation (e.g. AA.po2)    
-        self.min_value: float = 0.0                     # minimum of the input (firing rate is 0.0)
-        self.set_value: float = 0.0                     # setpoint of the input (firing rate is 0.5)
-        self.max_value: float = 0.0                     # maximum of the input (firing rate is 1.0)
-        self.time_constant: float = 1.0                 # time constant of the firing rate change (s)
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.input_value: float = 0.0                   # input value
-        self.firing_rate: float = 0.0                   # normalized receptor firing rate (0 - 1)
-
-        # -----------------------------------------------
-        # local properties
-        self._update_interval: float = 0.015             # update interval of the receptor (s)
-        self._update_counter: float = 0.0                # counter of the update interval (s)
-        self._max_firing_rate: float = 1.0               # maximum normalized firing rate 1.0
-        self._set_firing_rate: float = 0.5               # setpoint normalized firing rate 0.5
-        self._min_firing_rate: float = 0.0               # minimum normalized firing rate 0.0
-        self._input_site: object = None                  # reference to the input model
-        self._input_prop: str = ""                       # reference to the input property
-        self._gain: float = 0.0                          # gain of the firing rate
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # Get a reference to the input site
-        model, prop = self.input.split(".")
-        self._input_site = self._model_engine.models[model]
-        self._input_prop = prop
-
-        # Set the initial values
-        self.current_value = getattr(self._input_site, self._input_prop)
-        self.firing_rate = self._set_firing_rate
-        
-        # Flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # for performance reasons, the update is done only every 15 ms instead of every step
-        self._update_counter += self._t
-        if self._update_counter >= self._update_interval:
-            self._update_counter = 0.0
-
-            # get the input value
-            self.input_value = getattr(self._input_site, self._input_prop)
-
-            # Calculate the activation value
-            if self.input_value > self.max_value:
-                _activation = self.max_value - self.set_value
-            elif self.input_value < self.min_value:
-                _activation = self.min_value - self.set_value
-            else:
-                _activation = self.input_value - self.set_value
-
-            # Calculate the gain
-            if _activation > 0:
-                # Calculate the gain for positive activation
-                self._gain = (self._max_firing_rate - self._set_firing_rate) / (self.max_value - self.set_value)
-            else:
-                # Calculate the gain for negative activation
-                self._gain = (self._set_firing_rate - self._min_firing_rate) / (self.set_value - self.min_value)
-
-            # Calculate the firing rate of the receptor
-            _new_firing_rate = self._set_firing_rate + self._gain * _activation
-
-            # Incorporate the time constant to calculate the firing rate
-            self.firing_rate = self._update_interval * ((1.0 / self.time_constant) * (-self.firing_rate + _new_firing_rate)) + self.firing_rate
-
-class Efferent(BaseModelClass):
-    '''
-    The Efferent class models an autonomic nervous system efferent (effect) pathway and can be difficult to understand. 
-    It can take in (multiple) normalized firing rates (0-1), calculates the average firing rate and translates this to an effect size on the target by using 
-    an activation function with the gain depending on the minimal at maximal effect sizes. The effect size change is also modified by a time constant. 
-    The effect size is then transferred to the Effector target by setting the ans factor of the target. 
-    
-    For example: the effect on the heartrate has an effect_at_max_firing_rate of 0.428 and a effect_at_min_firing_rate of 1.5. 
-    This means that the effect size on the heartrate (hr_ans_factor) at an average firing rate of 1.0 is 0.428 and 1.5 at an average firing rate of 0.0.
-    This means that when the heart_rate_ref = 110, the heart_rate is about 47 at an avg effector firing rate of 1.0 and 165 at an avg effector firing rate of 0.0
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent parameters
-        self.target: str = ""                           # name of the target using dot notation (e.g. Heart.hr_ans_factor) 
-        self.effect_at_max_firing_rate: float = 0.0     # effect size at average input firing rate of 1.0
-        self.effect_at_min_firing_rate: float = 0.0     # effect size at average input firing rate of 0.0
-        self.tc: float = 0.0                            # time constant of the effect change (s)
-
-        # -----------------------------------------------
-        # initialize dependent parameters
-        self.firing_rate: float = 0.0                   # firing rate (unitless)
-        self.effector: float = 1.0                      # current effector size 
-
-        # -----------------------------------------------
-        # initialize local parameters
-        self._target_model: object = None               # reference to the target model
-        self._target_prop: str = ""                     # name of the parameter of the target model
-        self._update_interval = 0.015                   # update interval of the effector (s)
-        self._update_counter = 0.0                      # update counter (s)
-        self._cum_firing_rate: float = 0.0              # cummulative firing rate of the model step
-        self._cum_firing_rate_counter = 1.0             # counter for number of inputs
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # get a reference to the target model property
-        model, prop = self.target.split(".")
-        self._target_model = self._model_engine.models[model]
-        self._target_prop = prop
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-
-    def calc_model(self) -> None:
-        # for performance reasons, the update is done only every 15 ms instead of every step
-        self._update_counter += self._t
-        if self._update_counter >= self._update_interval:
-            self._update_counter = 0.0
-
-            # Determine the total average firing rate as the firing rate can be set by multiple pathways
-            self.firing_rate = 0.5
-            if self._cum_firing_rate_counter > 0.0:
-                self.firing_rate = self._cum_firing_rate / self._cum_firing_rate_counter
-
-            # Translate the average firing rate to the effect factor. 
-            # If the firing rate is aboven 0.5 use the mxe_high parameter, otherwise use the mxe_low parameter
-            if self.firing_rate >= 0.5:
-                effector = 1.0 + ((self.effect_at_max_firing_rate - 1.0) / 0.5) * (self.firing_rate - 0.5)
-            else:
-                effector = self.effect_at_min_firing_rate + ((1.0 - self.effect_at_min_firing_rate) / 0.5) * self.firing_rate
-
-            # Incorporate the time constant for the effector change
-            self.effector = (self._update_interval * ((1.0 / self.tc) * (-self.effector + effector)) + self.effector)
-
-            # Transfer the effect factor to the target model
-            setattr(self._target_model, self._target_prop, self.effector)
-
-            # Reset the effect factor and number of effectors
-            self._cum_firing_rate = 0.5
-            self._cum_firing_rate_counter = 0.0
-
-    # update effector firing rate
-    def update_effector(self, new_firing_rate, weight) -> None:
-        # increase the firing rate with a value determing on the
-        self._cum_firing_rate += (new_firing_rate - 0.5) * weight
-        self._cum_firing_rate_counter += 1.0
 
 class Metabolism(BaseModelClass):
     '''
@@ -2575,6 +2560,9 @@ class Metabolism(BaseModelClass):
             # store the new to2 and tco2
             self._model_engine.models[model].to2 = new_to2
             self._model_engine.models[model].tco2 = new_tco2
+
+class MicroVascularUnit(BaseModelClass):
+    pass
 
 class Mob(BaseModelClass):
     '''
@@ -2856,468 +2844,8 @@ class Mob(BaseModelClass):
 
         return activation
 
-class Ventilator(BaseModelClass):
-    '''
-    The Ventilator class models a mechanical ventilator and showcases the powerful object oriented design of explain. 
-    It uses GasCapacitances to model the inside air compartment of the ventilator, the tubing and the outside air. 
-    The in- and expiratory valves are modeled using a GasResistor. Pressure regulated volume control, pressure control, pressure support 
-    are mechanical ventilator modes which are supported. Triggering of the mechanical breath is also supported 
-    but interfacing with the Breathing model. The model generates pressure, volume and flow signals and 
-    inspiratory and expiratory tidal volumes, minute volumes, end tidal co2, co2 curves, resistance
-    and compliance measurements.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize the independent properties
-        self.pres_atm: float = 760                      # atmospheric pressure (mmHg)
-        self.fio2: float = 0.205                        # inspiratory fraction of oxygen
-        self.humidity: float = 1.0                      # humidity (percentage / 100%)
-        self.temp: float = 37                           # temperature (dgs C)
-        self.ettube_diameter: float = 4                 # endotracheal tube diameter (mm)
-        self.ettube_length: float = 110                 # endotracheal tube length (mm)
-        self.vent_mode: str = "PRVC"                    # ventilator mode (PC/PRVS/PS)                
-        self.vent_rate: float = 40                      # ventilator rate (breaths/min)
-        self.tidal_volume: float = 0.015                # target tidal volume (L)
-        self.insp_time: float = 0.4                     # inspiration time (s)
-        self.insp_flow: float = 12                      # inspiratory flow (L/min)
-        self.exp_flow: float = 3                        # expiratory flow (L/min)
-        self.pip_cmh2o: float = 14                      # peak inspiratory pressure (cmH2O)
-        self.pip_cmh2o_max: float = 14                  # maximal peak inspiratory pressure (cmH2O)
-        self.peep_cmh2o: float = 3                      # positive end expiratory pressure (cmH2O)
-        self.trigger_volume_perc: float = 6             # trigger volume percentage of tidal volume (%)
-        self.synchronized: bool = False                 # flag whether ventilator is synchronized with breathing or not       
-
-        # -----------------------------------------------
-        # initialize the dependent properties
-        self.pres: float = 0.0                          # pressure at beginning of endotracheal tube (cmH2O)
-        self.flow: float = 0.0                          # flow from the tubing to the endotracheal tube (L/s)
-        self.vol: float = 0.0                           # volume measured at the beginning of the endotracheal tube (L)
-        self.exp_time: float = 1.0                      # expiration time (s)
-        self.trigger_volume: float = 0.0                # trigger volume (L)
-        self.exp_tidal_volume: float = 0.0              # expiratory tidal volume (L)
-        self.insp_tidal_volume: float = 0.0             # inspiratory tidal volume (L)
-        self.ncc_insp: float = 0.0                      # inspiration counter (unitless)
-        self.ncc_exp: float = 0.0                       # expiration counter (unitless)
-        self.etco2: float = 0.0                         # end tidal carbon dioxide partial pressure (mmHg)
-        self.co2: float = 0.0                           # carbon dioxide partial pressure at endotracheal tube (mmHg)                       
-        self.triggered_breath: bool = False             # flag whether the current breath is triggered or not
-    
-        # -----------------------------------------------
-        # initialize the local properties
-        self._vent_gasin: object = None                 # reference to the GasCapacitance model of the air compartment of the ventilator at inspiration side
-        self._vent_gascircuit: object = None            # reference to the GasCapacitance modeling the ventilator tubing              
-        self._vent_gasout: object = None                # reference to the GasCapacitance modeing the air compartment of the ventilator at the expiration side
-        self._vent_insp_valve: object = None            # reference to the GasResistor modeling the inspiration valve
-        self._vent_exp_valve: object= None              # reference to the GasResistor modeling the expiration valve
-        self._vent_ettube: object = None                # reference to the GasResistor modeling the endotracheal tube
-        self._set_gas_composition = None                # reference to routine in the GasModel which calculates gas composition
-        self._ventilator_parts: list = []               # list holding all ventilator model parts
-        self._ettube_length_ref: float = 110            # reference value of the endotracheal tube length used to calculate the resistance of the tube
-        self._pip: float = 0.0                          # peak inspiratory pressure (mmHg)
-        self._pip_max: float = 0.0                      # maximal peak inspiratory pressure (mmHg)
-        self._peep: float = 0.0                         # positive end expiratory pressure (mmHg)
-        self._a: float = 0.0                            # parameter used for endotracheal tube resistance calculation
-        self._b: float= 0.0                             # parameter used for endotracheal tube resistance calculation
-        self._insp_time_counter: float = 0.0            # counter of the inspiration time (s)
-        self._exp_time_counter: float = 0.0             # counter of the expiration time (s)
-        self._insp_tidal_volume_counter: float = 0.0    # counter of the inspiratory volume (L)
-        self._exp_tidal_volume_counter: float = 0.0     # counter of the expiratory volume (L)
-        self._trigger_volume_counter: float = 0.0       # counter of the trigger volume (L)
-        self._inspiration: bool = False                 # flags whether the inspiration is running or not
-        self._expiration: bool = True                   # flags whether the expiration is running or not
-        self._tv_tolerance: float = 0.0005              # sets the allowed tolerance between the target and measurement tidal volume (L)
-        self._trigger_blocked: bool = False             # flags whether a trigger is blocked or not
-        self._trigger_start: bool = False               # flags whether a trigger is started
-        self._breathing_model: object = None            # reference to the breathing model for spontaneous breath detection
-        self._peak_flow: float = 0.0                    # holds the maximal generated flow (L/s)
-        self._prev_et_tube_flow: float = 0.0            # holds the flow across the endotracheal tube of the previous model step (L/s)
-        self._et_tube_resistance: float = 40.0          # holds the calculated endotracheal tube resistance (mmHg/l*s)
-         
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the breathing model for breath triggering
-        self._breathing_model = self._model_engine.models["Breathing"]
-
-        # find the ventilator components
-        self._vent_gasin = self._model_engine.models["VENT_GASIN"]
-        self._vent_gascircuit = self._model_engine.models["VENT_GASCIRCUIT"]
-        self._vent_gasout = self._model_engine.models["VENT_GASOUT"]
-        self._vent_insp_valve = self._model_engine.models["VENT_INSP_VALVE"]
-        self._vent_ettube = self._model_engine.models["VENT_ETTUBE"]
-        self._vent_exp_valve = self._model_engine.models["VENT_EXP_VALVE"]
-
-        # add the ventilator components to a list
-        self._ventilator_parts = []
-        self._ventilator_parts.append(self._vent_gasin)
-        self._ventilator_parts.append(self._vent_gascircuit)
-        self._ventilator_parts.append(self._vent_gasout)
-        self._ventilator_parts.append(self._vent_insp_valve)
-        self._ventilator_parts.append(self._vent_ettube)
-        self._ventilator_parts.append(self._vent_exp_valve)
-
-        # get reference to the gas composition calculator
-        self._set_gas_composition = self._model_engine.models["Gas"].set_gas_composition
-
-        # set the temperature, atmospheric pressure and humidity of the ventilator parts and calculate the initial composition
-        self._vent_gasin.pres_atm = self.pres_atm
-        self._vent_gasin.temp = self.temp
-        self._vent_gasin.target_temp = self.temp
-        self._vent_gasin.humidity = self.humidity
-        self._set_gas_composition(self._vent_gasin, self.fio2, self.temp, self.humidity)
-
-        self._vent_gascircuit.pres_atm = self.pres_atm
-        self._vent_gascircuit.temp = self.temp
-        self._vent_gascircuit.target_temp = self.temp
-        self._vent_gascircuit.humidity = self.humidity
-        self._set_gas_composition(self._vent_gascircuit, self.fio2, self.temp, self.humidity)
-
-        self._vent_gasout.pres_atm = self.pres_atm
-        self._vent_gasout.temp = 20.0
-        self._vent_gasout.target_temp = 20.0
-        self._vent_gasout.humidity = 0.5
-        self._set_gas_composition(self._vent_gasout, 0.205, 20.0, 0.5)
-
-        # set the endotracheal tube diameter
-        self.set_ettube_diameter(self.ettube_diameter)
-
-        # set the flow dependent endotracheal tube resistance
-        self._et_tube_resistance = self.calc_ettube_resistance(self.flow)
-        
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # as the ventilator setting are in cmH2O we need to convert them to mmHg
-        self._pip = self.pip_cmh2o / 1.35951
-        self._pip_max = self.pip_cmh2o_max / 1.35951
-        self._peep = self.peep_cmh2o / 1.35951
-
-        # if the ventilator is set to synchronized we have to look for trigegred breaths
-        if self.synchronized:
-            self.triggering()
-
-         # call the correct ventilation mode
-        if self.vent_mode == "PC" or self.vent_mode == "PRVC":
-            self.time_cycling()
-            self.pressure_control()
-
-        if self.vent_mode == "PS":
-            self.flow_cycling()
-            self.pressure_control()
-
-        # calculated the pressure in the ventilator tubing and convert it to cmH2O for reporting
-        self.pres = (self._vent_gascircuit.pres - self.pres_atm) * 1.35951
-
-        # report the current flow between the ventilator tubing and the endotracheal tube in L/min
-        self.flow = self._vent_ettube.flow * 60.0
-
-        # report the accumulated volume of the current breath in L
-        self.vol += self._vent_ettube.flow * 1000 * self._t
-
-        # report the current co2 of the dead-space in mmHg
-        self.co2 = self._model_engine.models["DS"].pco2
-        
-        # calculate the current minute volume in L/min
-        self.minute_volume = self.exp_tidal_volume * self.vent_rate
-
-        # calculate the flow dependent endotracheal tube resistance
-        self._et_tube_resistance = self.calc_ettube_resistance(self.flow)
-
-    def triggering(self) -> None:
-        # determine the trigger volume
-        self.trigger_volume = (self.tidal_volume / 100.0) * self.trigger_volume_perc
-
-        # is there a triggered breath (breaths start with ncc_insp ==1), we get this information from the breathing model
-        if self._breathing_model.ncc_insp == 1 and not self._trigger_blocked:
-            self._trigger_start = True
-
-        # if a spontaneous breath is started start counting the volume
-        if self._trigger_start:
-            self._trigger_volume_counter += self._vent_ettube.flow * self._t
-
-        # if the trigger volume is exceeded trigger a breath
-        if self._trigger_volume_counter > self.trigger_volume:
-            # reset the trigger volume counter
-            self._trigger_volume_counter = 0.0
-            # start a new ventilator assisted breath
-            self._exp_time_counter = self.exp_time
-            # prepare for a next triggered breath
-            self._trigger_start = False
-            # flag a triggered breath
-            self.triggered_breath = True
-
-    def flow_cycling(self) -> None:
-        # in flow cycling mode the ventilator stops the inspiration phase when the inspiratory 
-        # flow is decreased to about 70% of the peak inspiratory flow
-
-        # is there flow moving to the lungs and the breath is triggered
-        if self._vent_ettube.flow > 0.0 and self.triggered_breath:
-            # check whether the flow is increasing
-            if self._vent_ettube.flow > self._prev_et_tube_flow:
-                # if increasing then keep inspiration going
-                self._inspiration = True
-                self._expiration = False
-                # reset the ncc counter
-                self.ncc_insp = -1
-                # determine the peak flow
-                if self._vent_ettube.flow > self._peak_flow:
-                    self._peak_flow = self._vent_ettube.flow
-
-                # store the current exhaled tidal volume
-                self.exp_tidal_volume = -self._exp_tidal_volume_counter
-            else:
-                # if decreasing wait until it is 70% of the peak flow
-                if self._vent_ettube.flow < 0.3 * self._peak_flow:
-                    # go into expiration
-                    self._inspiration = False
-                    self._expiration = True
-                    # reset the ncc counter
-                    self.ncc_exp = -1
-                    # reset the tidal volume counter
-                    self._exp_tidal_volume_counter = 0.0
-                    # reset the triggered breath flag
-                    self.triggered_breath = False
-
-            self._prev_et_tube_flow = self._vent_ettube.flow
-
-        if self._vent_ettube.flow < 0.0 and not self.triggered_breath:
-            self._peak_flow = 0.0
-            self._prev_et_tube_flow = 0.0
-            self._inspiration = False
-            self._expiration = True
-            # reset the ncc counter
-            self.ncc_exp = -1
-            # calculate the expiratory tidal volume
-            self._exp_tidal_volume_counter += self._vent_ettube.flow * self._t
-
-        # if in inspiration increase the timer
-        if self._inspiration:
-            self.ncc_insp += 1
-            self._trigger_blocked = True
-
-        # if in expiration increase the timer
-        if self._expiration:
-            self.ncc_exp += 1
-            self._trigger_blocked = False
-
-    def time_cycling(self) -> None:
-        # in time cycling the inspiration and expiration phase have a specific duration
-
-        # calculate the expiration time
-        self.exp_time = 60.0 / self.vent_rate - self.insp_time
-
-        # has the inspiration time elapsed?
-        if self._insp_time_counter > self.insp_time:
-            # reset the inspiration time counter
-            self._insp_time_counter = 0.0
-            # store the inspiratory tidal volume
-            self.insp_tidal_volume = self._insp_tidal_volume_counter
-            # reset the inspiratory tidal volume counter
-            self._insp_tidal_volume_counter = 0.0
-            # flag the inspiration and expiration
-            self._inspiration = False
-            self._expiration = True
-            # reset the triggered breath flag
-            self.triggered_breath = False
-            # reset the ncc counter
-            self.ncc_exp = -1
-
-        # has the expiration time elapsed or is the expiration phase ended by a triggered breath
-        if self._exp_time_counter > self.exp_time:
-            # reset the expiration time counter
-            self._exp_time_counter = 0.0
-            # flag the inspiration and expiration
-            self._inspiration = True
-            self._expiration = False
-            # reset the ncc counter
-            self.ncc_insp = -1
-            # reset the volume counter
-            self.vol = 0.0
-            # reset the volume counters
-            self.exp_tidal_volume = -self._exp_tidal_volume_counter
-            # store the end tidal co2
-            self.etco2 = self._model_engine.models["DS"].pco2
-            # calculate the tidal volume per kg
-            self.tv_kg = (self.exp_tidal_volume * 1000.0) / self._model_engine.weight
-            # calculate the compliance of the lung
-            if self.exp_tidal_volume > 0:
-                self.compliance = 1 / (((self._pip - self._peep) * 1.35951) / (self.exp_tidal_volume * 1000.0)) # in ml/cmH2O
-            # reset the expiratory tidal volume counter
-            self._exp_tidal_volume_counter = 0.0
-            # check whether the ventilator is in PRVC mode because we need to adjust the pressure depending on the tidal volume
-            if self.vent_mode == "PRVC":
-                self.pressure_regulated_volume_control()
-
-        # if in inspiration increase the timer
-        if self._inspiration:
-            self._insp_time_counter += self._t
-            self.ncc_insp += 1
-            self._trigger_blocked = True
-            self._trigger_volume_counter = 0.0
-
-        # if in expiration increase the timer
-        if self._expiration:
-            self._exp_time_counter += self._t
-            self.ncc_exp += 1
-            self._trigger_blocked = False
-
-    def pressure_control(self) -> None:
-        # pressure controle ventilation is a time-cycled pressure limited ventilation mode.
-
-        if self._inspiration:
-            # close the expiration valve and open the inspiration valve
-            self._vent_exp_valve.no_flow = True
-            self._vent_insp_valve.no_flow = False
-
-            # prevent back flow to the ventilator
-            self._vent_insp_valve.no_back_flow = True
-
-            # set the resistance of the inspiration valve
-            self._vent_insp_valve.r_for = (self._vent_gasin.pres + self._pip - self.pres_atm - self._peep) / (self.insp_flow / 60.0)
-
-            # guard the inspiratory pressure
-            if self._vent_gascircuit.pres > self._pip + self.pres_atm:
-                # close the inspiratory valve when the pressure is reached
-                self._vent_insp_valve.no_flow = True
-
-            # calculate the inspiratory tidal volume
-            if self._vent_ettube.flow > 0:
-                self._insp_tidal_volume_counter += self._vent_ettube.flow * self._t
-
-        if self._expiration:
-            # close the inspiration valve and open the expiration valve and prevent backflow
-            self._vent_insp_valve.no_flow = True
-
-            self._vent_exp_valve.no_flow = False
-            self._vent_exp_valve.no_back_flow = True
-
-            # set the resistance of the expiration valve to and calculate the pressure in the expiration block
-            # to simulatie the positive end expiratory pressure 
-            self._vent_exp_valve.r_for = 10
-            self._vent_gasout.vol = (self._peep / self._vent_gasout.el_base + self._vent_gasout.u_vol)
-
-            # calculate the expiratory tidal volume
-            if self._vent_ettube.flow < 0:
-                self._exp_tidal_volume_counter += self._vent_ettube.flow * self._t
-    
-    def pressure_regulated_volume_control(self) -> None:
-         # pressure regulated volume control ventilation is a time-cycled pressure limited ventilation mode.
-         # where the ventilator increases or decreases the inspiratory pressure depending on whether or not
-         # the target volume is reached or not.
-
-        # if the target expiratory tidal volume is not reached then increase the peak inspiratory pressure
-        if self.exp_tidal_volume < self.tidal_volume - self._tv_tolerance:
-            self.pip_cmh2o += 1.0
-            # if the peak inspiratory pressure exceeds the set maximal pressure then don't increase it
-            if self.pip_cmh2o > self.pip_cmh2o_max:
-                self.pip_cmh2o = self.pip_cmh2o_max
-
-        # if the target expiratory tidal volume is exceeded then decrease the peak inspiratory pressure
-        if self.exp_tidal_volume > self.tidal_volume + self._tv_tolerance:
-            self.pip_cmh2o -= 1.0
-            # if the peak inspiratory pressure falls below the PEEP + 2 don't decrease it any further
-            if self.pip_cmh2o < self.peep_cmh2o + 2.0:
-                self.pip_cmh2o = self.peep_cmh2o + 2.0
-
-    def switch_ventilator(self, state: bool) -> None:
-        # switch the calculations of the ventilator model
-        self.is_enabled = state
-
-        # enable of disable all ventilator components
-        for vp in self._ventilator_parts:
-            vp.is_enabled = state
-            # make sure the no flow flag is set correctly on the gas resistors
-            if hasattr(vp, "no_flow"):
-                vp.no_flow = not state
-
-        # intubate the patient, meaning close MOUTH_DS connector as the ventilator is now connected to the DS component
-        self._model_engine.models["MOUTH_DS"].no_flow = state
-
-    def calc_ettube_resistance(self, flow) -> float:
-        # calculate the flow dependent endotracheal tube resistance
-        _ettube_length_ref = 110
-        res = (self._a * flow + self._b) * (self.ettube_length / _ettube_length_ref)
-        if res < 15.0:
-            res = 15
-
-        # set the resistance 
-        self._vent_ettube.r_for = res
-        self._vent_ettube.r_back = res
-
-        return res
-
-    def set_ettube_length(self, new_length) -> None:
-        if new_length >= 50:
-            self.ettube_length = new_length
-           
-    def set_ettube_diameter(self, new_diameter) -> None:
-        if new_diameter > 1.5:
-            self.ettube_diameter = new_diameter
-            # set resistance parameters (emprical derived from lab)
-            self._a = -2.375 * new_diameter + 11.9375
-            self._b = -14.375 * new_diameter + 65.9374
-
-    def set_fio2(self, new_fio2) -> None:
-        # set the new fio2 and make sure that is doesn't matter how it is provided
-        if new_fio2 > 20:
-            # user means %
-            self.fio2 = new_fio2 / 100.0
-        else:
-            self.fio2 = new_fio2
-
-        # calculate the new ventilator gas compostition
-        self._set_gas_composition(self._vent_gasin, self.fio2, self._vent_gasin.temp, self._vent_gasin.humidity)
-    
-    def set_humidity(self, new_humidity) -> None:
-        if new_humidity >= 0 and new_humidity <= 1.0:
-            self.humidity = new_humidity
-            # calculate the new ventilator gas compostition
-            self._set_gas_composition(self._vent_gasin, self.fio2, self._vent_gasin.temp, self.humidity)
-
-    def set_temp(self, new_temp) -> None:
-        self.temp = new_temp
-        # calculate the new ventilator gas compostition
-        self._set_gas_composition(self._vent_gasin, self.fio2, self.temp, self._vent_gasin.humidity)
-
-    def set_pc(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0) -> None:
-        # switch to pressure control mode
-        self.pip_cmh2o = pip
-        self.pip_cmh2o_max = pip
-        self.peep_cmh2o = peep
-        self.vent_rate = rate
-        self.insp_time = t_in
-        self.insp_flow = insp_flow
-        self.vent_mode = "PC"
-
-    def set_prvc(self, pip_max=18.0, peep=4.0, rate=40.0, tv=15.0, t_in=0.4, insp_flow=10.0) -> None:
-        # switch to pressure regulated volume control mode
-        self.pip_cmh2o_max = pip_max
-        self.peep_cmh2o = peep
-        self.vent_rate = rate
-        self.insp_time = t_in
-        self.tidal_volume = tv / 1000.0
-        self.insp_flow = insp_flow
-        self.vent_mode = "PRVC"
-
-    def set_psv(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0) -> None:
-        # switch to pressure support mode
-        self.pip_cmh2o = pip
-        self.pip_cmh2o_max = pip
-        self.peep_cmh2o = peep
-        self.vent_rate = rate
-        self.insp_time = t_in
-        self.insp_flow = insp_flow
-        self.vent_mode = "PS"
-
-    def trigger_breath(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0):
-        # trigger a breath by setting the expiration time counter
-        self._exp_time_counter = self.exp_time + 0.1
+class Pda(BaseModelClass):
+    pass
 
 class Placenta(BaseModelClass):
     '''
@@ -3555,331 +3083,6 @@ class Placenta(BaseModelClass):
         # convert resistance of Pa/m3 to mmHg/l
         res = res * 0.00000750062
         return res
-
-class Resuscitation(BaseModelClass):
-    '''
-    The Resuscitation class models a resuscitation situation where chest compressions and ventilations are
-    performed at various different rates. 
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties
-        self.cpr_enabled: bool = False                  # determines whether cpr is enabled or not
-        self.chest_comp_freq: float = 100.0             # chest compressions frequency (compressions / min)
-        self.chest_comp_max_pres: float = 10.0          # maximal pressure of the chest compressions (mmHg)
-        self.chest_comp_targets: dict = { "THORAX": 0.1}# dictionary holding the target models of the chest compressions and the relative force
-        self.chest_comp_no: int = 15                    # number of compressions if not continuous
-        self.chest_comp_cont: bool = False              # determines whether the chest compressions are continuous
-        
-        self.vent_freq: float = 30.0                    # ventilations frequency (breaths / min)
-        self.vent_no: int = 2                           # number of ventilatins if not continuous
-        self.vent_pres_pip: float = 16.0                # peak pressure of the ventilations (cmH2O)
-        self.vent_pres_peep: float = 5.0                # positive end expiratory pressure of the ventilations (cmH2O)
-        self.vent_insp_time: float = 1.0                # inspiration time of the ventilations (s)
-        self.vent_fio2: float = 0.21                    # fio2 of the inspired air
-
-        # -----------------------------------------------
-        # initialize dependent properties
-        self.chest_comp_pres: float = 0.0               # compression pressure (mmHg)
-
-        # -----------------------------------------------
-        # local variables
-        self._ventilator: object = None                 # reference to the mechanical ventilator model
-        self._breathing: object = None                  # reference to the breathing model
-        self._comp_timer: float = 0.0                   # compressions timer (s)
-        self._comp_counter: int = 0.0                   # counter of the number of compressions
-        self._comp_pause: bool = False                  # determines whether the compressions are paused or not
-        self._comp_pause_interval: float = 2.0          # interval of the compressions pause (s)
-        self._comp_pause_counter: float = 0.0           # compressions pause counter (s)
-        self._vent_interval: float = 0.0                # interval between ventilations (s)
-        self._vent_counter: float = 0.0                 # ventilation interval counter (s)
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # get references to the model on which this model depends
-        self._ventilator = self._model_engine.models["Ventilator"]
-        self._breathing = self._model_engine.models["Breathing"]
-        
-        # set the fio2 on the ventilator
-        self.set_fio2(self.vent_fio2)
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-    def calc_model(self) -> None:
-        # return if cpr is not enabled
-        if not self.cpr_enabled:
-            return
-        
-        # calculate the compression pause (no of ventilations * breath duration)
-        self._comp_pause_interval = (60.0 / self.vent_freq) * self.vent_no
-        self._vent_interval = (self._comp_pause_interval / self.vent_no) + self._t
-        # if the compressions are continuous set the ventilator frequency on the ventilator model
-        if self.chest_comp_cont:
-            self._ventilator.vent_rate = self.vent_freq
-        else:
-            # if the compressions or not continuous set a extremely low ventilator rate
-            # as the ventilator breaths are triggered differently
-            self._ventilator.vent_rate = 1.0
-
-
-        # if there is a pause in the compressions
-        if self._comp_pause:
-            # increase the compressions pause counter
-            self._comp_pause_counter += self._t
-
-            # check whether the compression pause is over
-            if self._comp_pause_counter > self._comp_pause_interval:
-                self._comp_pause = False
-                self._comp_pause_counter = 0.0
-                self._comp_counter = 0
-                self._vent_counter = 0.0
-            
-            # increase the ventilator interval timer
-            self._vent_counter += self._t
-
-            # trigger a breath when the ventilator counter is reached
-            if self._vent_counter > self._vent_interval:
-                self._vent_counter = 0.0
-                self._ventilator.trigger_breath()
-        else:
-            # calculate the compression force according to y(t) = A sin(2PIft+o) where A = amplitude, f = frequency in Hz, t is time, o = phase shift
-            a = self.chest_comp_max_pres / 2.0
-            f = self.chest_comp_freq / 60.0
-            self.chest_comp_pres = a * math.sin(2 * math.pi * f * self._comp_timer - 0.5 * math.pi) + a
-            
-            # increase the compressions timer
-            self._comp_timer += self._t
-
-            # check whether the compression has ended
-            if self._comp_timer > (60.0 / self.chest_comp_freq):
-                # reset the compression timer
-                self._comp_timer = 0.0
-                # increase the number of compressions
-                self._comp_counter += 1
-
-        # check whether we need to pause the compressions
-        if self._comp_counter >= self.chest_comp_no and not self.chest_comp_cont:
-            self._comp_pause = True
-            self._comp_pause_counter = 0.0
-            self._comp_counter = 0
-            self._ventilator.trigger_breath()
-
-        # apply the compression force to the target
-        for key, value in self.chest_comp_targets.items():
-            self._model_engine.models[key].pres_cc = float(self.chest_comp_pres * value)
-
-
-    
-    def switch_cpr(self, state):
-        if state:
-            self._ventilator.switch_ventilator(True)
-            self._ventilator.set_pc(self.vent_pres_pip, self.vent_pres_peep, 1.0, self.vent_insp_time, 5.0)
-            self._breathing.switch_breathing(False)
-            self.cpr_enabled = True
-        else:
-            self.cpr_enabled = False
-
-    def set_fio2(self, new_fio2):
-        self._ventilator.set_fio2(new_fio2)
-
-#----------------------------------------------------------------------------------------------------------------------------
-# explain grouper models
-class Circulation(BaseModelClass):
-    '''
-    The Circulation class is not a model but houses methods that influence groups of models. In case
-    of the circulation class these groups contain models having to do with the blood circulation.
-    E.g. the method change_systemic_vascular_resistance influences the systemic vascular resistance 
-    by setting the r_for_factor, r_back_factor and  the el_base_factor of de BloodResistors and BloodCapacitances 
-    stored in a list called svr_targets.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # independent properties
-        self.syst_art_res_factor: float = 1.0           # systemic arteries resistance factor
-        self.syst_ven_res_factor: float = 1.0           # systemic veins resistance factor
-        self.syst_art_el_factor: float = 1.0            # systemic arteries elastance factor
-        self.syst_ven_el_factor: float = 1.0            # systemic veins elastance factor
-        self.syst_art_u_vol_factor: float = 1.0         # systemic arteries unstressed volume factor
-        self.syst_ven_u_vol_factor: float = 1.0         # systemic veins unstressed volume factor
-
-        self.pulm_art_res_factor: float = 1.0           # pulmonary arteries resistance factor
-        self.pulm_ven_res_factor: float = 1.0           # pulmonary veins resistance factor
-        self.pulm_art_el_factor: float = 1.0            # pulmonary arteries elastance factor
-        self.pulm_ven_el_factor: float = 1.0            # pulmonary veins elastance factor
-        self.pulm_art_u_vol_factor: float = 1.0         # pulmonary arteries unstressed volume factor
-        self.pulm_ven_u_vol_factor: float = 1.0         # pulmonary veins unstressed volume factor
-
-        self.syst_art_res_ans_factor: float = 1.0       # systemic arteries resistance ans factor
-        self.syst_ven_res_ans_factor: float = 1.0       # systemic veins resistance ans factor
-        self.syst_art_el_ans_factor: float = 1.0        # systemic arteries elastance ans factor
-        self.syst_ven_el_ans_factor: float = 1.0        # systemic veins elastance ans factor
-        self.syst_art_u_vol_ans_factor: float = 1.0     # systemic arteries unstressed volume ans factor
-        self.syst_ven_u_vol_ans_factor: float = 1.0     # systemic veins unstressed volume ans factor
-
-        self.pulm_art_res_ans_factor: float = 1.0       # pulmonary arteries resistance ans factor
-        self.pulm_ven_res_ans_factor: float = 1.0       # pulmonary veins resistance ans factor
-        self.pulm_art_el_ans_factor: float = 1.0        # pulmonary arteries elastance ans factor
-        self.pulm_ven_el_ans_factor: float = 1.0        # pulmonary veins elastance ans factor
-        self.pulm_art_u_vol_ans_factor: float = 1.0     # pulmonary arteries unstressed volume ans factor
-        self.pulm_ven_u_vol_ans_factor: float = 1.0     # pulmonary veins unstressed volume ans factor
-
-        # -----------------------------------------------
-        # dependent properties
-        self.total_blood_volume: float = 0.0            # holds the current total blood volume
-
-        # -----------------------------------------------
-        # local properties
-        self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
-        self._update_interval: float = 0.015            # update interval (s)
-        self._update_counter: float = 0.0               # update interval counter (s)
-
-    def calc_model(self) -> None:
-        self._update_counter += self._t
-        if self._update_counter > self._update_interval:
-            self._update_counter = 0.0
-
-            # update the ans factors, as they are continuously set we need to update them
-            for t in self._model_engine.model_groups["syst_arteries"]:
-                t.el_base_ans_factor = self.syst_art_el_ans_factor
-                t.u_vol_ans_factor = self.syst_art_u_vol_ans_factor
-
-            for t in self._model_engine.model_groups["syst_art_resistors"]:
-                t.r_ans_factor = self.syst_art_res_ans_factor
-
-            for t in self._model_engine.model_groups["syst_veins"]:
-                t.el_base_ans_factor = self.syst_ven_el_ans_factor
-                t.u_vol_ans_factor = self.syst_ven_u_vol_ans_factor
-
-            for t in self._model_engine.model_groups["syst_ven_resistors"]:
-                t.r_ans_factor = self.syst_ven_res_ans_factor
-
-            for t in self._model_engine.model_groups["pulm_arteries"]:
-                t.el_base_ans_factor = self.pulm_art_el_ans_factor
-                t.u_vol_ans_factor = self.pulm_art_u_vol_ans_factor
-
-            for t in self._model_engine.model_groups["pulm_art_resistors"]:
-                t.r_ans_factor = self.pulm_art_res_ans_factor
-
-            for t in self._model_engine.model_groups["pulm_veins"]:
-                t.el_base_ans_factor = self.pulm_ven_el_ans_factor
-                t.u_vol_ans_factor = self.pulm_ven_u_vol_ans_factor
-
-            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
-                t.r_ans_factor = self.pulm_ven_res_ans_factor
-
-    def change_pulm_art_elastance(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_art_el_factor = change
-            for t in self._model_engine.model_groups["pulm_arteries"]:
-                    t.el_base_ans_factor = self.pulm_art_el_factor
-    
-    def change_pulm_art_u_vol(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_art_u_vol_factor = change
-            for t in self._model_engine.model_groups["pulm_arteries"]:
-                    t.r_ans_factor = self.pulm_art_u_vol_factor
-
-    def change_pulm_art_resistance(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_art_res_factor = change
-            for t in self._model_engine.model_groups["pulm_art_resistors"]:
-                    t.r_factor = self.pulm_art_res_factor
-             
-    def change_pulm_ven_elastance(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_ven_el_factor = change
-            for t in self._model_engine.model_groups["pulm_veins"]:
-                    t.el_base_ans_factor = self.pulm_ven_el_factor
-    
-    def change_pulm_ven_u_vol(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_ven_u_vol_factor = change
-            for t in self._model_engine.model_groups["pulm_veins"]:
-                    t.r_ans_factor = self.pulm_ven_u_vol_factor
-
-    def change_pulm_ven_resistance(self, change: float) -> None:
-        if change > 0.0:
-            self.pulm_ven_res_factor = change
-            for t in self._model_engine.model_groups["pulm_ven_resistors"]:
-                    t.r_factor = self.pulm_ven_res_factor
-    
-    def change_syst_art_elastance(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_art_el_factor = change
-            for t in self._model_engine.model_groups["syst_arteries"]:
-                    t.el_base_ans_factor = self.syst_art_el_factor
-    
-    def change_syst_art_u_vol(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_art_u_vol_factor = change
-            for t in self._model_engine.model_groups["syst_arteries"]:
-                    t.r_ans_factor = self.syst_art_u_vol_factor
-
-    def change_syst_art_resistance(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_art_res_factor = change
-            for t in self._model_engine.model_groups["syst_art_resistors"]:
-                    t.r_factor = self.syst_art_res_factor
-             
-    def change_syst_ven_elastance(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_ven_el_factor = change
-            for t in self._model_engine.model_groups["syst_veins"]:
-                    t.el_base_ans_factor = self.syst_ven_el_factor
-    
-    def change_syst_ven_u_vol(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_ven_u_vol_factor = change
-            for t in self._model_engine.model_groups["syst_veins"]:
-                    t.r_ans_factor = self.syst_ven_u_vol_factor
-
-    def change_syst_ven_resistance(self, change: float) -> None:
-        if change > 0.0:
-            self.syst_ven_res_factor = change
-            for t in self._model_engine.model_groups["syst_ven_resistors"]:
-                    t.r_factor = self.syst_ven_res_factor
-
-    def get_total_blood_volume(self) -> float:
-        total_volume: float = 0.0
-        # iterate over all blood containing models
-        for _, m in self._model_engine.models.items():
-            if (m.model_type in self._blood_containing_modeltypes):
-                # if the model is enabled then at the current volume to the total volume
-                if (m.is_enabled):
-                    total_volume += m.vol
-
-        # store the current volume
-        self.total_blood_volume = total_volume
-
-        # return the total blood volume
-        return self.total_blood_volume
-
-    def set_total_blood_volume(self, new_blood_volume: float) -> None:
-        # first get the current volume
-        current_blood_volume = self.get_total_blood_volume()
-        # calculate the change in total blood volume
-        blood_volume_change = new_blood_volume / current_blood_volume
-        # iterate over all blood containing models
-        for _, m in self._model_engine.models.items():
-            if (m.model_type in self._blood_containing_modeltypes):
-                if (m.is_enabled):
-                    # change the volume with the blood_volume_change_factor
-                    self._model_engine.models[m].vol = (self._model_engine.models[m].vol * blood_volume_change)
-                    # also change the unstressed volume so that the ratio between volume and unstressed volume does not change!
-                    self._model_engine.models[m].u_vol = (self._model_engine.models[m].u_vol * blood_volume_change)
-        
-        # store the new total blood volume
-        self.total_blood_volume = self.get_total_blood_volume()
 
 class Respiration(BaseModelClass):
     '''
@@ -4181,8 +3384,58 @@ class Shunts(BaseModelClass):
         else:
             return 100000000
 
+class Valve(BaseModelClass):
+    '''
+    A valve is a model object which connects two capacitances and models the flow between them based on the pressure difference and the resistance value.
+    '''
+
+    def __init__(self, model_ref: object, name: str) -> None:
+        # initialize the BaseModelClass
+        super().__init__(model_ref, name)
+
+        # ---------------------------------------------------------------------------------------------------------------
+        # initialize independent properties
+        self.r_for:float  = 1.0                         # forward flow resistance Rf (mmHg/l*s)
+        self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
+        self.comp_from: str = ""                        # holds the name of the upstream component
+        self.comp_to: str = ""                          # holds the name of the downstream component
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.flow: float = 0.0                          # flow f(t) (L/s)
+
+    def calc_model(self) -> None:
+        # calculate the flow based on the pressures of the connected capacitances and the resistance values
+        self.flow = self.calc_flow(
+            self._model_engine.models[self.comp_from].pres, 
+            self._model_engine.models[self.comp_to].pres, 
+            self.r_for, 
+            self.r_k, 
+            self.flow
+        )
+
+        # update the volumes of the connected capacitances based on the calculated flow
+        self.update_volumes(self.flow)
+
+    def calc_flow(self, p1_t: float, p2_t: float, Rf: float, K1: float, f_t: float) -> float:
+        # calculate and return the flow based on the pressures and resistance values
+        if (p1_t - p2_t) >= 0:
+            return ((p1_t - p2_t) - K1 * (f_t ** 2)) / Rf
+        else:
+            return 0.0
+        
+    def update_volumes(self, flow: float) -> None:
+        if flow >= 0:
+            self._comp_from_ref.volume_out(flow * self._t)
+            self._comp_to_ref.volume_in(flow * self._t, self._comp_from_ref)
+        else:
+            self._comp_from_ref.volume_in(-flow * self._t, self._comp_to_ref)
+            self._comp_to_ref.volume_out(-flow * self._t)
+
+
 #----------------------------------------------------------------------------------------------------------------------------
 # explain device models
+
 class Ecls(BaseModelClass):
     '''
     The ECLS class models an ECLS system where blood is taken out of the circulation and oxygen added and carbon dioxied removed
@@ -4922,8 +4175,604 @@ class Monitor(BaseModelClass):
         self.cvp_signal = self._ra.pres_in if self._ra else 0.0
         self.co2_signal = self._ventilator.co2 if self._ventilator else 0.0
 
+class Resuscitation(BaseModelClass):
+    '''
+    The Resuscitation class models a resuscitation situation where chest compressions and ventilations are
+    performed at various different rates. 
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties
+        self.cpr_enabled: bool = False                  # determines whether cpr is enabled or not
+        self.chest_comp_freq: float = 100.0             # chest compressions frequency (compressions / min)
+        self.chest_comp_max_pres: float = 10.0          # maximal pressure of the chest compressions (mmHg)
+        self.chest_comp_targets: dict = { "THORAX": 0.1}# dictionary holding the target models of the chest compressions and the relative force
+        self.chest_comp_no: int = 15                    # number of compressions if not continuous
+        self.chest_comp_cont: bool = False              # determines whether the chest compressions are continuous
+        
+        self.vent_freq: float = 30.0                    # ventilations frequency (breaths / min)
+        self.vent_no: int = 2                           # number of ventilatins if not continuous
+        self.vent_pres_pip: float = 16.0                # peak pressure of the ventilations (cmH2O)
+        self.vent_pres_peep: float = 5.0                # positive end expiratory pressure of the ventilations (cmH2O)
+        self.vent_insp_time: float = 1.0                # inspiration time of the ventilations (s)
+        self.vent_fio2: float = 0.21                    # fio2 of the inspired air
+
+        # -----------------------------------------------
+        # initialize dependent properties
+        self.chest_comp_pres: float = 0.0               # compression pressure (mmHg)
+
+        # -----------------------------------------------
+        # local variables
+        self._ventilator: object = None                 # reference to the mechanical ventilator model
+        self._breathing: object = None                  # reference to the breathing model
+        self._comp_timer: float = 0.0                   # compressions timer (s)
+        self._comp_counter: int = 0.0                   # counter of the number of compressions
+        self._comp_pause: bool = False                  # determines whether the compressions are paused or not
+        self._comp_pause_interval: float = 2.0          # interval of the compressions pause (s)
+        self._comp_pause_counter: float = 0.0           # compressions pause counter (s)
+        self._vent_interval: float = 0.0                # interval between ventilations (s)
+        self._vent_counter: float = 0.0                 # ventilation interval counter (s)
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # get references to the model on which this model depends
+        self._ventilator = self._model_engine.models["Ventilator"]
+        self._breathing = self._model_engine.models["Breathing"]
+        
+        # set the fio2 on the ventilator
+        self.set_fio2(self.vent_fio2)
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # return if cpr is not enabled
+        if not self.cpr_enabled:
+            return
+        
+        # calculate the compression pause (no of ventilations * breath duration)
+        self._comp_pause_interval = (60.0 / self.vent_freq) * self.vent_no
+        self._vent_interval = (self._comp_pause_interval / self.vent_no) + self._t
+        # if the compressions are continuous set the ventilator frequency on the ventilator model
+        if self.chest_comp_cont:
+            self._ventilator.vent_rate = self.vent_freq
+        else:
+            # if the compressions or not continuous set a extremely low ventilator rate
+            # as the ventilator breaths are triggered differently
+            self._ventilator.vent_rate = 1.0
+
+
+        # if there is a pause in the compressions
+        if self._comp_pause:
+            # increase the compressions pause counter
+            self._comp_pause_counter += self._t
+
+            # check whether the compression pause is over
+            if self._comp_pause_counter > self._comp_pause_interval:
+                self._comp_pause = False
+                self._comp_pause_counter = 0.0
+                self._comp_counter = 0
+                self._vent_counter = 0.0
+            
+            # increase the ventilator interval timer
+            self._vent_counter += self._t
+
+            # trigger a breath when the ventilator counter is reached
+            if self._vent_counter > self._vent_interval:
+                self._vent_counter = 0.0
+                self._ventilator.trigger_breath()
+        else:
+            # calculate the compression force according to y(t) = A sin(2PIft+o) where A = amplitude, f = frequency in Hz, t is time, o = phase shift
+            a = self.chest_comp_max_pres / 2.0
+            f = self.chest_comp_freq / 60.0
+            self.chest_comp_pres = a * math.sin(2 * math.pi * f * self._comp_timer - 0.5 * math.pi) + a
+            
+            # increase the compressions timer
+            self._comp_timer += self._t
+
+            # check whether the compression has ended
+            if self._comp_timer > (60.0 / self.chest_comp_freq):
+                # reset the compression timer
+                self._comp_timer = 0.0
+                # increase the number of compressions
+                self._comp_counter += 1
+
+        # check whether we need to pause the compressions
+        if self._comp_counter >= self.chest_comp_no and not self.chest_comp_cont:
+            self._comp_pause = True
+            self._comp_pause_counter = 0.0
+            self._comp_counter = 0
+            self._ventilator.trigger_breath()
+
+        # apply the compression force to the target
+        for key, value in self.chest_comp_targets.items():
+            self._model_engine.models[key].pres_cc = float(self.chest_comp_pres * value)
+
+
+    
+    def switch_cpr(self, state):
+        if state:
+            self._ventilator.switch_ventilator(True)
+            self._ventilator.set_pc(self.vent_pres_pip, self.vent_pres_peep, 1.0, self.vent_insp_time, 5.0)
+            self._breathing.switch_breathing(False)
+            self.cpr_enabled = True
+        else:
+            self.cpr_enabled = False
+
+    def set_fio2(self, new_fio2):
+        self._ventilator.set_fio2(new_fio2)
+
+class Ventilator(BaseModelClass):
+    '''
+    The Ventilator class models a mechanical ventilator and showcases the powerful object oriented design of explain. 
+    It uses GasCapacitances to model the inside air compartment of the ventilator, the tubing and the outside air. 
+    The in- and expiratory valves are modeled using a GasResistor. Pressure regulated volume control, pressure control, pressure support 
+    are mechanical ventilator modes which are supported. Triggering of the mechanical breath is also supported 
+    but interfacing with the Breathing model. The model generates pressure, volume and flow signals and 
+    inspiratory and expiratory tidal volumes, minute volumes, end tidal co2, co2 curves, resistance
+    and compliance measurements.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize the independent properties
+        self.pres_atm: float = 760                      # atmospheric pressure (mmHg)
+        self.fio2: float = 0.205                        # inspiratory fraction of oxygen
+        self.humidity: float = 1.0                      # humidity (percentage / 100%)
+        self.temp: float = 37                           # temperature (dgs C)
+        self.ettube_diameter: float = 4                 # endotracheal tube diameter (mm)
+        self.ettube_length: float = 110                 # endotracheal tube length (mm)
+        self.vent_mode: str = "PRVC"                    # ventilator mode (PC/PRVS/PS)                
+        self.vent_rate: float = 40                      # ventilator rate (breaths/min)
+        self.tidal_volume: float = 0.015                # target tidal volume (L)
+        self.insp_time: float = 0.4                     # inspiration time (s)
+        self.insp_flow: float = 12                      # inspiratory flow (L/min)
+        self.exp_flow: float = 3                        # expiratory flow (L/min)
+        self.pip_cmh2o: float = 14                      # peak inspiratory pressure (cmH2O)
+        self.pip_cmh2o_max: float = 14                  # maximal peak inspiratory pressure (cmH2O)
+        self.peep_cmh2o: float = 3                      # positive end expiratory pressure (cmH2O)
+        self.trigger_volume_perc: float = 6             # trigger volume percentage of tidal volume (%)
+        self.synchronized: bool = False                 # flag whether ventilator is synchronized with breathing or not       
+
+        # -----------------------------------------------
+        # initialize the dependent properties
+        self.pres: float = 0.0                          # pressure at beginning of endotracheal tube (cmH2O)
+        self.flow: float = 0.0                          # flow from the tubing to the endotracheal tube (L/s)
+        self.vol: float = 0.0                           # volume measured at the beginning of the endotracheal tube (L)
+        self.exp_time: float = 1.0                      # expiration time (s)
+        self.trigger_volume: float = 0.0                # trigger volume (L)
+        self.exp_tidal_volume: float = 0.0              # expiratory tidal volume (L)
+        self.insp_tidal_volume: float = 0.0             # inspiratory tidal volume (L)
+        self.ncc_insp: float = 0.0                      # inspiration counter (unitless)
+        self.ncc_exp: float = 0.0                       # expiration counter (unitless)
+        self.etco2: float = 0.0                         # end tidal carbon dioxide partial pressure (mmHg)
+        self.co2: float = 0.0                           # carbon dioxide partial pressure at endotracheal tube (mmHg)                       
+        self.triggered_breath: bool = False             # flag whether the current breath is triggered or not
+    
+        # -----------------------------------------------
+        # initialize the local properties
+        self._vent_gasin: object = None                 # reference to the GasCapacitance model of the air compartment of the ventilator at inspiration side
+        self._vent_gascircuit: object = None            # reference to the GasCapacitance modeling the ventilator tubing              
+        self._vent_gasout: object = None                # reference to the GasCapacitance modeing the air compartment of the ventilator at the expiration side
+        self._vent_insp_valve: object = None            # reference to the GasResistor modeling the inspiration valve
+        self._vent_exp_valve: object= None              # reference to the GasResistor modeling the expiration valve
+        self._vent_ettube: object = None                # reference to the GasResistor modeling the endotracheal tube
+        self._set_gas_composition = None                # reference to routine in the GasModel which calculates gas composition
+        self._ventilator_parts: list = []               # list holding all ventilator model parts
+        self._ettube_length_ref: float = 110            # reference value of the endotracheal tube length used to calculate the resistance of the tube
+        self._pip: float = 0.0                          # peak inspiratory pressure (mmHg)
+        self._pip_max: float = 0.0                      # maximal peak inspiratory pressure (mmHg)
+        self._peep: float = 0.0                         # positive end expiratory pressure (mmHg)
+        self._a: float = 0.0                            # parameter used for endotracheal tube resistance calculation
+        self._b: float= 0.0                             # parameter used for endotracheal tube resistance calculation
+        self._insp_time_counter: float = 0.0            # counter of the inspiration time (s)
+        self._exp_time_counter: float = 0.0             # counter of the expiration time (s)
+        self._insp_tidal_volume_counter: float = 0.0    # counter of the inspiratory volume (L)
+        self._exp_tidal_volume_counter: float = 0.0     # counter of the expiratory volume (L)
+        self._trigger_volume_counter: float = 0.0       # counter of the trigger volume (L)
+        self._inspiration: bool = False                 # flags whether the inspiration is running or not
+        self._expiration: bool = True                   # flags whether the expiration is running or not
+        self._tv_tolerance: float = 0.0005              # sets the allowed tolerance between the target and measurement tidal volume (L)
+        self._trigger_blocked: bool = False             # flags whether a trigger is blocked or not
+        self._trigger_start: bool = False               # flags whether a trigger is started
+        self._breathing_model: object = None            # reference to the breathing model for spontaneous breath detection
+        self._peak_flow: float = 0.0                    # holds the maximal generated flow (L/s)
+        self._prev_et_tube_flow: float = 0.0            # holds the flow across the endotracheal tube of the previous model step (L/s)
+        self._et_tube_resistance: float = 40.0          # holds the calculated endotracheal tube resistance (mmHg/l*s)
+         
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # find the breathing model for breath triggering
+        self._breathing_model = self._model_engine.models["Breathing"]
+
+        # find the ventilator components
+        self._vent_gasin = self._model_engine.models["VENT_GASIN"]
+        self._vent_gascircuit = self._model_engine.models["VENT_GASCIRCUIT"]
+        self._vent_gasout = self._model_engine.models["VENT_GASOUT"]
+        self._vent_insp_valve = self._model_engine.models["VENT_INSP_VALVE"]
+        self._vent_ettube = self._model_engine.models["VENT_ETTUBE"]
+        self._vent_exp_valve = self._model_engine.models["VENT_EXP_VALVE"]
+
+        # add the ventilator components to a list
+        self._ventilator_parts = []
+        self._ventilator_parts.append(self._vent_gasin)
+        self._ventilator_parts.append(self._vent_gascircuit)
+        self._ventilator_parts.append(self._vent_gasout)
+        self._ventilator_parts.append(self._vent_insp_valve)
+        self._ventilator_parts.append(self._vent_ettube)
+        self._ventilator_parts.append(self._vent_exp_valve)
+
+        # get reference to the gas composition calculator
+        self._set_gas_composition = self._model_engine.models["Gas"].set_gas_composition
+
+        # set the temperature, atmospheric pressure and humidity of the ventilator parts and calculate the initial composition
+        self._vent_gasin.pres_atm = self.pres_atm
+        self._vent_gasin.temp = self.temp
+        self._vent_gasin.target_temp = self.temp
+        self._vent_gasin.humidity = self.humidity
+        self._set_gas_composition(self._vent_gasin, self.fio2, self.temp, self.humidity)
+
+        self._vent_gascircuit.pres_atm = self.pres_atm
+        self._vent_gascircuit.temp = self.temp
+        self._vent_gascircuit.target_temp = self.temp
+        self._vent_gascircuit.humidity = self.humidity
+        self._set_gas_composition(self._vent_gascircuit, self.fio2, self.temp, self.humidity)
+
+        self._vent_gasout.pres_atm = self.pres_atm
+        self._vent_gasout.temp = 20.0
+        self._vent_gasout.target_temp = 20.0
+        self._vent_gasout.humidity = 0.5
+        self._set_gas_composition(self._vent_gasout, 0.205, 20.0, 0.5)
+
+        # set the endotracheal tube diameter
+        self.set_ettube_diameter(self.ettube_diameter)
+
+        # set the flow dependent endotracheal tube resistance
+        self._et_tube_resistance = self.calc_ettube_resistance(self.flow)
+        
+        # flag that the model is initialized
+        self._is_initialized = True
+
+    def calc_model(self) -> None:
+        # as the ventilator setting are in cmH2O we need to convert them to mmHg
+        self._pip = self.pip_cmh2o / 1.35951
+        self._pip_max = self.pip_cmh2o_max / 1.35951
+        self._peep = self.peep_cmh2o / 1.35951
+
+        # if the ventilator is set to synchronized we have to look for trigegred breaths
+        if self.synchronized:
+            self.triggering()
+
+         # call the correct ventilation mode
+        if self.vent_mode == "PC" or self.vent_mode == "PRVC":
+            self.time_cycling()
+            self.pressure_control()
+
+        if self.vent_mode == "PS":
+            self.flow_cycling()
+            self.pressure_control()
+
+        # calculated the pressure in the ventilator tubing and convert it to cmH2O for reporting
+        self.pres = (self._vent_gascircuit.pres - self.pres_atm) * 1.35951
+
+        # report the current flow between the ventilator tubing and the endotracheal tube in L/min
+        self.flow = self._vent_ettube.flow * 60.0
+
+        # report the accumulated volume of the current breath in L
+        self.vol += self._vent_ettube.flow * 1000 * self._t
+
+        # report the current co2 of the dead-space in mmHg
+        self.co2 = self._model_engine.models["DS"].pco2
+        
+        # calculate the current minute volume in L/min
+        self.minute_volume = self.exp_tidal_volume * self.vent_rate
+
+        # calculate the flow dependent endotracheal tube resistance
+        self._et_tube_resistance = self.calc_ettube_resistance(self.flow)
+
+    def triggering(self) -> None:
+        # determine the trigger volume
+        self.trigger_volume = (self.tidal_volume / 100.0) * self.trigger_volume_perc
+
+        # is there a triggered breath (breaths start with ncc_insp ==1), we get this information from the breathing model
+        if self._breathing_model.ncc_insp == 1 and not self._trigger_blocked:
+            self._trigger_start = True
+
+        # if a spontaneous breath is started start counting the volume
+        if self._trigger_start:
+            self._trigger_volume_counter += self._vent_ettube.flow * self._t
+
+        # if the trigger volume is exceeded trigger a breath
+        if self._trigger_volume_counter > self.trigger_volume:
+            # reset the trigger volume counter
+            self._trigger_volume_counter = 0.0
+            # start a new ventilator assisted breath
+            self._exp_time_counter = self.exp_time
+            # prepare for a next triggered breath
+            self._trigger_start = False
+            # flag a triggered breath
+            self.triggered_breath = True
+
+    def flow_cycling(self) -> None:
+        # in flow cycling mode the ventilator stops the inspiration phase when the inspiratory 
+        # flow is decreased to about 70% of the peak inspiratory flow
+
+        # is there flow moving to the lungs and the breath is triggered
+        if self._vent_ettube.flow > 0.0 and self.triggered_breath:
+            # check whether the flow is increasing
+            if self._vent_ettube.flow > self._prev_et_tube_flow:
+                # if increasing then keep inspiration going
+                self._inspiration = True
+                self._expiration = False
+                # reset the ncc counter
+                self.ncc_insp = -1
+                # determine the peak flow
+                if self._vent_ettube.flow > self._peak_flow:
+                    self._peak_flow = self._vent_ettube.flow
+
+                # store the current exhaled tidal volume
+                self.exp_tidal_volume = -self._exp_tidal_volume_counter
+            else:
+                # if decreasing wait until it is 70% of the peak flow
+                if self._vent_ettube.flow < 0.3 * self._peak_flow:
+                    # go into expiration
+                    self._inspiration = False
+                    self._expiration = True
+                    # reset the ncc counter
+                    self.ncc_exp = -1
+                    # reset the tidal volume counter
+                    self._exp_tidal_volume_counter = 0.0
+                    # reset the triggered breath flag
+                    self.triggered_breath = False
+
+            self._prev_et_tube_flow = self._vent_ettube.flow
+
+        if self._vent_ettube.flow < 0.0 and not self.triggered_breath:
+            self._peak_flow = 0.0
+            self._prev_et_tube_flow = 0.0
+            self._inspiration = False
+            self._expiration = True
+            # reset the ncc counter
+            self.ncc_exp = -1
+            # calculate the expiratory tidal volume
+            self._exp_tidal_volume_counter += self._vent_ettube.flow * self._t
+
+        # if in inspiration increase the timer
+        if self._inspiration:
+            self.ncc_insp += 1
+            self._trigger_blocked = True
+
+        # if in expiration increase the timer
+        if self._expiration:
+            self.ncc_exp += 1
+            self._trigger_blocked = False
+
+    def time_cycling(self) -> None:
+        # in time cycling the inspiration and expiration phase have a specific duration
+
+        # calculate the expiration time
+        self.exp_time = 60.0 / self.vent_rate - self.insp_time
+
+        # has the inspiration time elapsed?
+        if self._insp_time_counter > self.insp_time:
+            # reset the inspiration time counter
+            self._insp_time_counter = 0.0
+            # store the inspiratory tidal volume
+            self.insp_tidal_volume = self._insp_tidal_volume_counter
+            # reset the inspiratory tidal volume counter
+            self._insp_tidal_volume_counter = 0.0
+            # flag the inspiration and expiration
+            self._inspiration = False
+            self._expiration = True
+            # reset the triggered breath flag
+            self.triggered_breath = False
+            # reset the ncc counter
+            self.ncc_exp = -1
+
+        # has the expiration time elapsed or is the expiration phase ended by a triggered breath
+        if self._exp_time_counter > self.exp_time:
+            # reset the expiration time counter
+            self._exp_time_counter = 0.0
+            # flag the inspiration and expiration
+            self._inspiration = True
+            self._expiration = False
+            # reset the ncc counter
+            self.ncc_insp = -1
+            # reset the volume counter
+            self.vol = 0.0
+            # reset the volume counters
+            self.exp_tidal_volume = -self._exp_tidal_volume_counter
+            # store the end tidal co2
+            self.etco2 = self._model_engine.models["DS"].pco2
+            # calculate the tidal volume per kg
+            self.tv_kg = (self.exp_tidal_volume * 1000.0) / self._model_engine.weight
+            # calculate the compliance of the lung
+            if self.exp_tidal_volume > 0:
+                self.compliance = 1 / (((self._pip - self._peep) * 1.35951) / (self.exp_tidal_volume * 1000.0)) # in ml/cmH2O
+            # reset the expiratory tidal volume counter
+            self._exp_tidal_volume_counter = 0.0
+            # check whether the ventilator is in PRVC mode because we need to adjust the pressure depending on the tidal volume
+            if self.vent_mode == "PRVC":
+                self.pressure_regulated_volume_control()
+
+        # if in inspiration increase the timer
+        if self._inspiration:
+            self._insp_time_counter += self._t
+            self.ncc_insp += 1
+            self._trigger_blocked = True
+            self._trigger_volume_counter = 0.0
+
+        # if in expiration increase the timer
+        if self._expiration:
+            self._exp_time_counter += self._t
+            self.ncc_exp += 1
+            self._trigger_blocked = False
+
+    def pressure_control(self) -> None:
+        # pressure controle ventilation is a time-cycled pressure limited ventilation mode.
+
+        if self._inspiration:
+            # close the expiration valve and open the inspiration valve
+            self._vent_exp_valve.no_flow = True
+            self._vent_insp_valve.no_flow = False
+
+            # prevent back flow to the ventilator
+            self._vent_insp_valve.no_back_flow = True
+
+            # set the resistance of the inspiration valve
+            self._vent_insp_valve.r_for = (self._vent_gasin.pres + self._pip - self.pres_atm - self._peep) / (self.insp_flow / 60.0)
+
+            # guard the inspiratory pressure
+            if self._vent_gascircuit.pres > self._pip + self.pres_atm:
+                # close the inspiratory valve when the pressure is reached
+                self._vent_insp_valve.no_flow = True
+
+            # calculate the inspiratory tidal volume
+            if self._vent_ettube.flow > 0:
+                self._insp_tidal_volume_counter += self._vent_ettube.flow * self._t
+
+        if self._expiration:
+            # close the inspiration valve and open the expiration valve and prevent backflow
+            self._vent_insp_valve.no_flow = True
+
+            self._vent_exp_valve.no_flow = False
+            self._vent_exp_valve.no_back_flow = True
+
+            # set the resistance of the expiration valve to and calculate the pressure in the expiration block
+            # to simulatie the positive end expiratory pressure 
+            self._vent_exp_valve.r_for = 10
+            self._vent_gasout.vol = (self._peep / self._vent_gasout.el_base + self._vent_gasout.u_vol)
+
+            # calculate the expiratory tidal volume
+            if self._vent_ettube.flow < 0:
+                self._exp_tidal_volume_counter += self._vent_ettube.flow * self._t
+    
+    def pressure_regulated_volume_control(self) -> None:
+         # pressure regulated volume control ventilation is a time-cycled pressure limited ventilation mode.
+         # where the ventilator increases or decreases the inspiratory pressure depending on whether or not
+         # the target volume is reached or not.
+
+        # if the target expiratory tidal volume is not reached then increase the peak inspiratory pressure
+        if self.exp_tidal_volume < self.tidal_volume - self._tv_tolerance:
+            self.pip_cmh2o += 1.0
+            # if the peak inspiratory pressure exceeds the set maximal pressure then don't increase it
+            if self.pip_cmh2o > self.pip_cmh2o_max:
+                self.pip_cmh2o = self.pip_cmh2o_max
+
+        # if the target expiratory tidal volume is exceeded then decrease the peak inspiratory pressure
+        if self.exp_tidal_volume > self.tidal_volume + self._tv_tolerance:
+            self.pip_cmh2o -= 1.0
+            # if the peak inspiratory pressure falls below the PEEP + 2 don't decrease it any further
+            if self.pip_cmh2o < self.peep_cmh2o + 2.0:
+                self.pip_cmh2o = self.peep_cmh2o + 2.0
+
+    def switch_ventilator(self, state: bool) -> None:
+        # switch the calculations of the ventilator model
+        self.is_enabled = state
+
+        # enable of disable all ventilator components
+        for vp in self._ventilator_parts:
+            vp.is_enabled = state
+            # make sure the no flow flag is set correctly on the gas resistors
+            if hasattr(vp, "no_flow"):
+                vp.no_flow = not state
+
+        # intubate the patient, meaning close MOUTH_DS connector as the ventilator is now connected to the DS component
+        self._model_engine.models["MOUTH_DS"].no_flow = state
+
+    def calc_ettube_resistance(self, flow) -> float:
+        # calculate the flow dependent endotracheal tube resistance
+        _ettube_length_ref = 110
+        res = (self._a * flow + self._b) * (self.ettube_length / _ettube_length_ref)
+        if res < 15.0:
+            res = 15
+
+        # set the resistance 
+        self._vent_ettube.r_for = res
+        self._vent_ettube.r_back = res
+
+        return res
+
+    def set_ettube_length(self, new_length) -> None:
+        if new_length >= 50:
+            self.ettube_length = new_length
+           
+    def set_ettube_diameter(self, new_diameter) -> None:
+        if new_diameter > 1.5:
+            self.ettube_diameter = new_diameter
+            # set resistance parameters (emprical derived from lab)
+            self._a = -2.375 * new_diameter + 11.9375
+            self._b = -14.375 * new_diameter + 65.9374
+
+    def set_fio2(self, new_fio2) -> None:
+        # set the new fio2 and make sure that is doesn't matter how it is provided
+        if new_fio2 > 20:
+            # user means %
+            self.fio2 = new_fio2 / 100.0
+        else:
+            self.fio2 = new_fio2
+
+        # calculate the new ventilator gas compostition
+        self._set_gas_composition(self._vent_gasin, self.fio2, self._vent_gasin.temp, self._vent_gasin.humidity)
+    
+    def set_humidity(self, new_humidity) -> None:
+        if new_humidity >= 0 and new_humidity <= 1.0:
+            self.humidity = new_humidity
+            # calculate the new ventilator gas compostition
+            self._set_gas_composition(self._vent_gasin, self.fio2, self._vent_gasin.temp, self.humidity)
+
+    def set_temp(self, new_temp) -> None:
+        self.temp = new_temp
+        # calculate the new ventilator gas compostition
+        self._set_gas_composition(self._vent_gasin, self.fio2, self.temp, self._vent_gasin.humidity)
+
+    def set_pc(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0) -> None:
+        # switch to pressure control mode
+        self.pip_cmh2o = pip
+        self.pip_cmh2o_max = pip
+        self.peep_cmh2o = peep
+        self.vent_rate = rate
+        self.insp_time = t_in
+        self.insp_flow = insp_flow
+        self.vent_mode = "PC"
+
+    def set_prvc(self, pip_max=18.0, peep=4.0, rate=40.0, tv=15.0, t_in=0.4, insp_flow=10.0) -> None:
+        # switch to pressure regulated volume control mode
+        self.pip_cmh2o_max = pip_max
+        self.peep_cmh2o = peep
+        self.vent_rate = rate
+        self.insp_time = t_in
+        self.tidal_volume = tv / 1000.0
+        self.insp_flow = insp_flow
+        self.vent_mode = "PRVC"
+
+    def set_psv(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0) -> None:
+        # switch to pressure support mode
+        self.pip_cmh2o = pip
+        self.pip_cmh2o_max = pip
+        self.peep_cmh2o = peep
+        self.vent_rate = rate
+        self.insp_time = t_in
+        self.insp_flow = insp_flow
+        self.vent_mode = "PS"
+
+    def trigger_breath(self, pip=14.0, peep=4.0, rate=40.0, t_in=0.4, insp_flow=10.0):
+        # trigger a breath by setting the expiration time counter
+        self._exp_time_counter = self.exp_time + 0.1
+
 #----------------------------------------------------------------------------------------------------------------------------
-# custom classes from explain users (not verified by the explain team)
+# example custom class for use as a template for creating your own custom models
 class ExampleCustomModel(BaseModelClass):
     '''
     The BloodResistor model is a extension of the Resistor model as described in the paper.
@@ -5078,6 +4927,9 @@ class Datacollector():
         # increase the interval counter
         self._interval_counter += self.modeling_stepsize
 
+class RealTimeMovingAverage():
+    pass
+
 class TaskScheduler():
     def __init__(self, model_ref: object) -> None:
         self._model_engine: object = model_ref          # object holding a reference to the model engine
@@ -5179,587 +5031,7 @@ class TaskScheduler():
         else:
             p = getattr(task["model"], task["prop1"])
             p[task["prop2"]] = task["current_value"]
-
-class Scaler():
-    def __init__(self, model_ref: object) -> None:
-        # -----------------------------------------------
-        # initialize the independent properties
-        self.reference_weight: float = 3.545            # reference weight for global scaling factor (kg)
-        self.weight: float = 3.545                      # current weight (kg)
-        self.height: float = 0.5                        # current height (m)
-
-        # general scalers
-        self.global_scale_factor: float = 1.0           # global scaling factor
-        self.total_blood_volume_kg: float = 0.0         # total blood volume (L/kg)
-        self.total_gas_volume_kg: float = 0.0           # total gas volume (L/kg)
-
-        # Reference heartrate and pressures
-        self.hr_ref: float = 125
-        self.map_ref: float = 50
-
-        # Scaling factors for breathing, metabolism, and cardiovascular system
-        self.minute_volume_ref_scaling_factor: float = 1.0
-        self.vt_rr_ratio_scaling_factor: float = 1.0
-        self.vo2_scaling_factor: float = 1.0
-        self.resp_q_scaling_factor: float = 1.0
-
-        # Scaling factors of the heart and circulation
-        self.el_min_atrial_factor: float = 1.0
-        self.el_max_atrial_factor: float = 1.0
-        self.el_min_ventricular_factor: float = 1.0
-        self.el_max_ventricular_factor: float = 1.0
-        self.el_min_cor_factor: float = 1.0
-        self.el_max_cor_factor: float = 1.0
-        self.el_base_pericardium_factor: float = 1.0
-        self.el_base_syst_art_factor: float = 1.0
-        self.el_base_syst_ven_factor: float = 1.0
-        self.el_base_pulm_art_factor: float = 1.0
-        self.el_base_pulm_ven_factor: float = 1.0
-        self.el_base_cap_factor: float = 1.0
-        self.el_base_da_factor: float = 1.0
-
-        self.u_vol_atrial_factor: float = 1.0
-        self.u_vol_ventricular_factor: float = 1.0
-        self.u_vol_cor_factor: float = 1.0
-        self.u_vol_pericardium_factor: float = 1.0
-        self.u_vol_syst_art_factor: float = 1.0
-        self.u_vol_syst_ven_factor: float = 1.0
-        self.u_vol_pulm_art_factor: float = 1.0
-        self.u_vol_pulm_ven_factor: float = 1.0
-        self.u_vol_cap_factor: float = 1.0
-        self.u_vol_da_factor: float = 1.0
-
-        self.r_valve_factor: float = 1.0
-        self.r_cor_factor: float = 1.0
-        self.r_syst_art_factor: float = 1.0
-        self.r_syst_ven_factor: float = 1.0
-        self.r_pulm_art_factor: float = 1.0
-        self.r_pulm_ven_factor: float = 1.0
-        self.r_shunts_factor: float = 1.0
-        self.r_da_factor: float = 1.0
-
-        # Scaling factors of the lungs and chestwall
-        self.el_base_lungs_factor: float = 1.0
-        self.el_base_ds_factor: float = 1.0
-        self.el_base_cw_factor: float = 1.0 
-        self.el_base_thorax_factor: float = 1.0
-
-        self.u_vol_lungs_factor: float = 1.0
-        self.u_vol_ds_factor: float = 1.0
-        self.u_vol_cw_factor: float = 1.0
-        self.u_vol_thorax_factor: float = 1.0
-
-        self.r_upper_airway_factor: float = 1.0
-        self.r_lower_airway_factor: float = 1.0
-        
-        # -----------------------------------------------
-        # initialize the dependent properties
-
-        # -----------------------------------------------
-        # initialize the local properties
-        self._model_engine: object = model_ref          # object holding a reference to the model engine
-        self._t: float = model_ref.modeling_stepsize    # modeling stepsize
-        self._blood_containing_modeltypes: list = ["BloodCapacitance", "BloodTimeVaryingElastance"]
-
-    def load_scaler_settings(self, scaler_settings: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in scaler_settings.items():
-            setattr(self, key, value)
-
-        # scale the patient according to the settings
-        self.scale_patient(self.weight, self.hr_ref, self.map_ref, self.total_blood_volume_kg, self.total_gas_volume_kg)
-        
-    def scale_patient(self, new_weight: float, hr_ref: float, map_ref: float, new_blood_volume_kg: float = 0.08, new_gas_volume_kg: float = 0.04) -> None:
-        # calculate the global weight based scaling factor
-        self.global_scale_factor = new_weight / self.reference_weight
-
-        # store the new properties
-        self._model_engine.weight = new_weight
-        self.weight = new_weight
-        self.hr_ref = hr_ref
-        self.map_ref = map_ref
-
-        # scale the blood volume
-        self.scale_blood_volume(new_blood_volume_kg)
-
-        # scale the gas volume
-        self.scale_gas_volume(new_gas_volume_kg)
-
-        # scale heart
-        self.scale_heart()
-        self.scale_heart_valves()
-        self.scale_pericardium()
-        self.scale_cor_resistors()
-
-        # scale the arterial tree
-        self.scale_syst_arteries()
-        self.scale_syst_art_resistors()
-        self.scale_pulm_arteries()
-        self.scale_pulm_art_resistors()
-        
-        # scale the capillaries
-        self.scale_capillaries()
-
-        # scale the venous tree
-        self.scale_syst_veins()
-        self.scale_syst_ven_resistors()
-        self.scale_pulm_veins()
-        self.scale_pulm_ven_resistors()
-
-        # scale the shunts
-        self.scale_shunts()
-        self.scale_ductus_arteriosus()
-        self.scale_ductus_art_resistors()
-
-        # scale the respiratory system
-        self.scale_thorax()
-        self.scale_chestwall()
-        self.scale_lungs()
-        self.scale_dead_space()
-        self.scale_upper_airways()
-        self.scale_lower_airways()
-
-        # scale the other models
-        self.scale_ans_hr(self.hr_ref)
-        self.scale_ans_map(self.map_ref)
-        self.scale_breathing()
-        self.scale_metabolism()
-        self.scale_mob()
-
-        # print the scaling report
-        print(f"Scaling model to {new_weight} kg => factor {self.global_scale_factor:.4f}")
-        print(f"Scaling blood volume to {new_blood_volume_kg} L/kg = {self.total_blood_volume_kg * self._model_engine.weight:.4f} L")
-        print(f"Scaling lung  volume to {new_gas_volume_kg} L/kg = {self.total_gas_volume_kg * self._model_engine.weight:.4f} L")
-
-    def scale_blood_volume(self, new_blood_volume_kg: float):
-        # get the current absolute total volume (L)
-        current_blood_volume = self.get_total_blood_volume()
-
-        # determine the new absolute blood volume (L)
-        target_blood_volume = new_blood_volume_kg * self._model_engine.weight
-
-        # calculate the change of the total volume
-        scale_factor = target_blood_volume / current_blood_volume
-
-        # change the volume of the blood containing models
-        for _, m in self._model_engine.models.items():
-            if (m.model_type in self._blood_containing_modeltypes):
-                # scale the blood volume, the unstressed volume is scaled separately!
-                m.vol = m.vol * scale_factor
-                m.u_vol = m.u_vol * scale_factor
-
-        # store the new total volume (L/kg)
-        self.total_blood_volume_kg = self.get_total_blood_volume() / self._model_engine.weight
-
-    def get_total_blood_volume(self) -> float:
-        # declare an object for storing the volume
-        _total_volume: float = 0.0
-        # iterate over all blood containing models
-        for _, m in self._model_engine.models.items():
-            if (m.model_type in self._blood_containing_modeltypes):
-                # if the model is enabled then at the current volume to the total volume
-                if (m.is_enabled):
-                    _total_volume += m.vol
-                    
-        # return the total blood volume
-        return _total_volume
-
-    def scale_gas_volume(self, new_gas_volume_kg: float):
-        # get the current absolute total volume (L)
-        current_gas_volume = self.get_total_gas_volume()
-
-        # determine the new absolute blood volume (L)
-        target_gas_volume = new_gas_volume_kg * self._model_engine.weight
-
-        # calculate the change of the total volume
-        scale_factor = target_gas_volume / current_gas_volume
-
-        # change the volume of the blood containing models
-        for _, m in self._model_engine.models.items():
-            if (m.name in ["ALL", "ALR", "DS"]):
-                # scale the gas volume, the unstressed volume is scaled separately!
-                m.vol = m.vol * scale_factor
-                m.u_vol = m.u_vol * scale_factor
-
-        # store the new total volume (L/kg)
-        self.total_gas_volume_kg = self.get_total_gas_volume() / self._model_engine.weight
-
-    def get_total_gas_volume(self) -> float:
-        # declare an object for storing the volume
-        _total_volume: float = 0.0
-        # iterate over all blood containing models
-        for _, m in self._model_engine.models.items():
-            if m.name in ["ALL", "ALR", "DS"]:
-                # if the model is enabled then at the current volume to the total volume
-                if (m.is_enabled):
-                    _total_volume += m.vol
-                    
-        # return the total gas volume
-        return _total_volume
-
-    def scale_ans_hr(self, new_hr_ref: float):
-        # store the new reference value
-        self.hr_ref = new_hr_ref
-        # adjust the ans reference values
-        self.scale_ans(self.hr_ref, self.map_ref)
-    
-    def scale_ans_map(self, new_map_ref: float):
-        # store the new reference value
-        self.map_ref = new_map_ref
-         # adjust the ans reference values
-        self.scale_ans(self.hr_ref, self.map_ref)
-    
-    def scale_ans(self, hr_ref: float, map_ref: float):
-        # store the new reference values
-        self.hr_ref = hr_ref
-        self.map_ref = map_ref
-        # set the reference value on the Heart model
-        self._model_engine.models["Heart"].heart_rate_ref = self.hr_ref
-        # set the baroreceptor
-        for m in self._model_engine.model_groups["baroreceptor"]:
-            m.min_value = self.map_ref / 2.0
-            m.set_value = self.map_ref
-            m.max_value = self.map_ref * 2.0
-
-    def scale_breathing(self):
-        # as the reference minute volume and the vt_rr are already weight based this is an additional scaling
-        # factor on top the weight based factor and we do not have to use the global scaling factor
-        self._model_engine.models["Breathing"].minute_volume_ref_scaling_factor = self.minute_volume_ref_scaling_factor
-        self._model_engine.models["Breathing"].vt_rr_ratio_scaling_factor = self.vt_rr_ratio_scaling_factor
-    
-    def scale_metabolism(self):
-        # as the vo2 is already weight based this is an additional scaling factor 
-        # and we do not have to use the global scaling factor
-        self._model_engine.models["Metabolism"].vo2_scaling_factor = self.vo2_scaling_factor
-        self._model_engine.models["Metabolism"].resp_q_scaling_factor = self.resp_q_scaling_factor
-    
-    def scale_mob(self):
-        # the mob model is already completely weight based
-        pass
-
-    def scale_heart(self):
-        # set the new factors on the heart chambers
-        for m in self._model_engine.model_groups["heart_atria"]:
-            m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_atrial_factor
-            m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_atrial_factor
-            m.u_vol_scaling_factor = self.u_vol_atrial_factor
-        for m in self._model_engine.model_groups["heart_ventricles"]:
-            m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_ventricular_factor
-            m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_ventricular_factor
-            m.u_vol_scaling_factor = self.u_vol_ventricular_factor
-        for m in self._model_engine.model_groups["coronaries"]:
-            m.el_min_scaling_factor = (1.0 / self.global_scale_factor) * self.el_min_cor_factor
-            m.el_max_scaling_factor = (1.0 / self.global_scale_factor) * self.el_max_cor_factor
-            m.u_vol_scaling_factor = self.u_vol_cor_factor
-
-    def scale_heart_valves(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["heart_valves"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_valve_factor
-
-    def scale_pericardium(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["pericardium"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pericardium_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_pericardium_factor
-
-    def scale_cor_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["cor_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_cor_factor
-
-    def scale_syst_arteries(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["syst_arteries"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_syst_art_factor
-            m.u_vol_scaling_factor = self.u_vol_syst_art_factor
-
-    def scale_syst_art_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["syst_art_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_syst_art_factor
-
-    def scale_pulm_arteries(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["pulm_arteries"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pulm_art_factor
-            m.u_vol_scaling_factor = self.u_vol_pulm_art_factor
-
-    def scale_pulm_art_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["pulm_art_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_pulm_art_factor
-
-    def scale_capillaries(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["capillaries"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cap_factor
-            m.u_vol_scaling_factor = self.u_vol_cap_factor
-
-    def scale_syst_veins(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["syst_veins"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_syst_ven_factor
-            m.u_vol_scaling_factor = self.u_vol_syst_ven_factor
-    
-    def scale_syst_ven_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["syst_ven_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_syst_ven_factor
-
-    def scale_pulm_veins(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["pulm_veins"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_pulm_ven_factor
-            m.u_vol_scaling_factor = self.u_vol_pulm_ven_factor
-    
-    def scale_pulm_ven_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["pulm_ven_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_pulm_ven_factor
-
-    def scale_shunts(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["shunts"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_shunts_factor
-
-    def scale_ductus_arteriosus(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["ductus_arteriosus"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_da_factor
-            m.u_vol_scaling_factor = self.u_vol_da_factor
-
-    def scale_ductus_art_resistors(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["ductus_art_resistors"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_da_factor
-
-    def scale_thorax(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["thorax"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_thorax_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_thorax_factor
-
-    def scale_chestwall(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["chestwall"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_cw_factor
-            m.u_vol_scaling_factor = self.global_scale_factor * self.u_vol_cw_factor
-
-    def scale_lungs(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["alveoli"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_lungs_factor
-            m.u_vol_scaling_factor = self.u_vol_lungs_factor
-
-    def scale_dead_space(self):
-        # set the scaling factors
-        for m in self._model_engine.model_groups["dead_space"]:
-            m.el_base_scaling_factor = (1.0 / self.global_scale_factor) * self.el_base_ds_factor
-            m.u_vol_scaling_factor = self.u_vol_ds_factor
-
-    def scale_upper_airways(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["upper_airways"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_upper_airway_factor
-
-    def scale_lower_airways(self):
-        # set the scale factors
-        for m in self._model_engine.model_groups["lower_airways"]:
-            m.r_scaling_factor = (1.0 / self.global_scale_factor) * self.r_lower_airway_factor
-    
-class Plotter():
-    def __init__(self) -> None:
-        # dark mode flag
-        self.dark_mode = False
-
-        # plot line colors
-        self.lines = ["r-", "b-", "g-", "c-", "m-", "y-", "k-", "w-"]
-        self.plot_background_color = "#1E2029"
-        self.plot_background_color = "#FFFFFF"
-        self.plot_height = 3
-        self.plot_dpi = 300
-        self.plot_fontsize = 8
-        self.plot_axis_color = "darkgray"
-
-        # realtime variables
-        self.plot_rt_background_color = "black"
-        self.plot_rt_height = 4
-        self.plot_rt_dpi = 300
-        self.plot_rt_fontsize = 8
-        self.plot_rt_axis_color = "darkgray"
-
-        # define realtime intermediates
-        self.x_rt = []
-        self.y_rt = []
-        self.ani = {}
-        self.no_dp = 1200
-        self.rt_time_window = 10.0
-        self.rt_update_interval = 0.2
-        self.combined = False
-        self.rescale_counter = 0.0
-        self.rescale_interval = 2.0
-        self.rescale_enabled = False
-        self.parameters_rt = []
-        self.fig_rt = {}
-        self.ax_rt = []
-        self.axs_rt = []
-        self.x = {}
-        self.y = {}
-        self.line_rt = []
-        self.lines_rt = []
-        self.xy = False
-        self.x_prop = ""
-
-    def draw_time_graph(self, collected_data, properties, sharey=False, combined=True, ylabel="", autoscale=True, ylowerlim=0, yupperlim=100, fill=True, fill_between=False, zeroline=False, fig_size_x=14, fig_size_y=3):
-            parameters = properties
-            no_parameters = 0
-            # remove ncc ventricular from the list
-            try:
-                index = parameters.index("Heart.ncc_ventricular")
-            except:
-                index = -1
-            
-            if index > -1:
-                parameters.pop(index)
-
-            no_dp = len(collected_data)
-            self.counter = no_dp
-            x = np.zeros(no_dp)
-            y = []
-
-            for parameter in enumerate(parameters):
-                y.append(np.zeros(no_dp))
-                no_parameters += 1
-
-            for index, t in enumerate(collected_data):
-                x[index] = t["time"]
-
-                for idx, parameter in enumerate(parameters):
-                    y[idx][index] = t[parameter]
-
-            # determine number of needed plots
-            if self.dark_mode:
-                plt.style.use("dark_background")
-
-            # set the background color and erase the labels and headers
-
-            if no_parameters == 1:
-                combined = True
-
-            if combined == False:
-                fig, axs = plt.subplots(
-                    nrows=no_parameters,
-                    ncols=1,
-                    figsize=(fig_size_x, fig_size_y * 0.75 * no_parameters),
-                    sharex=True,
-                    sharey=sharey,
-                    constrained_layout=True,
-                    dpi=self.plot_dpi / 3,
-                )
-                # Change to the desired color
-                fig.patch.set_facecolor(self.plot_background_color)
-                fig.set_label("")
-                fig.canvas.header_visible = False
-
-                # Change the fontsize as desired
-                if no_parameters > 1:
-                    for i, ax in enumerate(axs):
-                        ax.tick_params(
-                            axis="both", which="both", labelsize=self.plot_fontsize
-                        )
-                        ax.spines["right"].set_visible(False)
-                        ax.spines["top"].set_visible(False)
-                        ax.spines["bottom"].set_color(self.plot_axis_color)
-                        ax.spines["left"].set_color(self.plot_axis_color)
-                        ax.margins(x=0)
-                        ax.plot(x, y[i], self.lines[i], linewidth=1)
-                        ax.set_title(parameters[i], fontsize=self.plot_fontsize)
-                        ax.set_xlabel("time (s)", fontsize=self.plot_fontsize)
-                        ax.set_ylabel(ylabel, fontsize=self.plot_fontsize)
-                        if not autoscale:
-                            ax.set_ylim([ylowerlim, yupperlim])
-                        if zeroline:
-                            ax.hlines(0, np.amin(x), np.amax(x), linestyles="dashed")
-                        if fill:
-                            ax.fill_between(x, y[i], color="blue", alpha=0.3)
-
-            if combined:
-                fig = plt.figure(
-                    figsize=(fig_size_x, fig_size_y),
-                    dpi=self.plot_dpi / 3,
-                    facecolor=self.plot_background_color,
-                    tight_layout=True,
-                )
-                plt.tick_params(axis="both", which="both", labelsize=self.plot_fontsize)
-                fig.patch.set_facecolor(self.plot_background_color)
-                fig.set_label("")
-                fig.canvas.header_visible = False
-
-                ax = plt.gca()
-                ax.spines["right"].set_visible(False)
-                ax.spines["top"].set_visible(False)
-                ax.spines["bottom"].set_color(self.plot_axis_color)
-                ax.spines["left"].set_color(self.plot_axis_color)
-                plt.margins(x=0, y=0)
-                if not autoscale:
-                    plt.ylim([ylowerlim, yupperlim])
-                for index, parameter in enumerate(parameters):
-                    # Subplot of figure 1 with id 211 the data (red line r-, first legend = parameter)
-                    plt.plot(x, y[index], self.lines[index], linewidth=1, label=parameter)
-                    if fill:
-                        plt.fill_between(x, y[index], color="blue", alpha=0.3)
-                if zeroline:
-                    plt.hlines(0, np.amin(x), np.amax(x), linestyles="dashed")
-                plt.xlabel("time (s)", fontsize=self.plot_fontsize)
-                plt.ylabel(ylabel, fontsize=self.plot_fontsize)
-                plt.xticks(fontsize=self.plot_fontsize)
-                plt.yticks(fontsize=self.plot_fontsize)
-                # Add a legend
-                plt.legend(
-                    loc="upper center",
-                    bbox_to_anchor=(0.5, 1.22),
-                    ncol=6,
-                    fontsize=self.plot_fontsize,
-                )
-                if fill_between:
-                    plt.fill_between(x, y[0], y[1], color="blue", alpha=0.1)
-
-            plt.show()
-
-    def draw_xy_graph(self, collected_data, property_x, property_y, fig_size_x=2, fig_size_y=2):
-            no_dp = len(collected_data)
-            x = np.zeros(no_dp)
-            y = np.zeros(no_dp)
-
-            for index, t in enumerate(collected_data):
-                x[index] = t[property_x]
-                y[index] = t[property_y]
-
-            # determine number of needed plots
-            if self.dark_mode:
-                plt.style.use("dark_background")
-
-            plt.figure(
-                figsize=(fig_size_x, fig_size_y),
-                dpi=self.plot_dpi / 1.5,
-                facecolor=self.plot_background_color,
-                tight_layout=True,
-            )
-            # Subplot of figure 1 with id 211 the data (red line r-, first legend = parameter)
-            plt.plot(x, y, self.lines[0], linewidth=1)
-            ax = plt.gca()
-            ax.spines["right"].set_visible(False)
-            ax.spines["top"].set_visible(False)
-            ax.spines["bottom"].set_color(self.plot_axis_color)
-            ax.spines["left"].set_color(self.plot_axis_color)
-
-            plt.xlabel(property_x, fontsize=self.plot_fontsize / 3, labelpad=0)
-            plt.ylabel(property_y, fontsize=self.plot_fontsize / 3, rotation=90, labelpad=1)
-            plt.xticks(fontsize=self.plot_fontsize / 3)
-            plt.yticks(fontsize=self.plot_fontsize / 3)
-            plt.show()
-
+  
 class ModelEngine():
     def __init__(self, model_definition_json_filename: str = {}) -> None:
         # check whether the extension is already supplied or not
@@ -5813,9 +5085,6 @@ class ModelEngine():
         # define an object holding the data plotter
         self._plotter: object = None
 
-        # define an object holding the model scaler
-        self._scaler: object = None
-
         # define local attributes
         self.initialized: bool = False
 
@@ -5833,7 +5102,6 @@ class ModelEngine():
         self.model_data: list = []
         self._datacollector: object = None
         self._task_scheduler: object = None
-        self._scaler: object = None
         self.initialized = False
 
         # store the model definition in the model engine class
@@ -5875,7 +5143,6 @@ class ModelEngine():
         self._datacollector = Datacollector(self)
         self._task_scheduler = TaskScheduler(self)
         self._plotter = Plotter()
-        self._scaler = Scaler(self)
 
         # replace contents of the model_groups with references to the models instead of the names
         model_groups_refs = {}
@@ -6250,6 +5517,200 @@ class ModelEngine():
         collected_data = self._datacollector.collected_data
 
         self._plotter.draw_xy_graph(collected_data, property_x, property_y, fig_size_x, fig_size_y)
+
+#----------------------------------------------------------------------------------------------------------------------------
+# python interactive specific helper class
+class Plotter():
+    def __init__(self) -> None:
+        # dark mode flag
+        self.dark_mode = False
+
+        # plot line colors
+        self.lines = ["r-", "b-", "g-", "c-", "m-", "y-", "k-", "w-"]
+        self.plot_background_color = "#1E2029"
+        self.plot_background_color = "#FFFFFF"
+        self.plot_height = 3
+        self.plot_dpi = 300
+        self.plot_fontsize = 8
+        self.plot_axis_color = "darkgray"
+
+        # realtime variables
+        self.plot_rt_background_color = "black"
+        self.plot_rt_height = 4
+        self.plot_rt_dpi = 300
+        self.plot_rt_fontsize = 8
+        self.plot_rt_axis_color = "darkgray"
+
+        # define realtime intermediates
+        self.x_rt = []
+        self.y_rt = []
+        self.ani = {}
+        self.no_dp = 1200
+        self.rt_time_window = 10.0
+        self.rt_update_interval = 0.2
+        self.combined = False
+        self.rescale_counter = 0.0
+        self.rescale_interval = 2.0
+        self.rescale_enabled = False
+        self.parameters_rt = []
+        self.fig_rt = {}
+        self.ax_rt = []
+        self.axs_rt = []
+        self.x = {}
+        self.y = {}
+        self.line_rt = []
+        self.lines_rt = []
+        self.xy = False
+        self.x_prop = ""
+
+    def draw_time_graph(self, collected_data, properties, sharey=False, combined=True, ylabel="", autoscale=True, ylowerlim=0, yupperlim=100, fill=True, fill_between=False, zeroline=False, fig_size_x=14, fig_size_y=3):
+            parameters = properties
+            no_parameters = 0
+            # remove ncc ventricular from the list
+            try:
+                index = parameters.index("Heart.ncc_ventricular")
+            except:
+                index = -1
+            
+            if index > -1:
+                parameters.pop(index)
+
+            no_dp = len(collected_data)
+            self.counter = no_dp
+            x = np.zeros(no_dp)
+            y = []
+
+            for parameter in enumerate(parameters):
+                y.append(np.zeros(no_dp))
+                no_parameters += 1
+
+            for index, t in enumerate(collected_data):
+                x[index] = t["time"]
+
+                for idx, parameter in enumerate(parameters):
+                    y[idx][index] = t[parameter]
+
+            # determine number of needed plots
+            if self.dark_mode:
+                plt.style.use("dark_background")
+
+            # set the background color and erase the labels and headers
+
+            if no_parameters == 1:
+                combined = True
+
+            if combined == False:
+                fig, axs = plt.subplots(
+                    nrows=no_parameters,
+                    ncols=1,
+                    figsize=(fig_size_x, fig_size_y * 0.75 * no_parameters),
+                    sharex=True,
+                    sharey=sharey,
+                    constrained_layout=True,
+                    dpi=self.plot_dpi / 3,
+                )
+                # Change to the desired color
+                fig.patch.set_facecolor(self.plot_background_color)
+                fig.set_label("")
+                fig.canvas.header_visible = False
+
+                # Change the fontsize as desired
+                if no_parameters > 1:
+                    for i, ax in enumerate(axs):
+                        ax.tick_params(
+                            axis="both", which="both", labelsize=self.plot_fontsize
+                        )
+                        ax.spines["right"].set_visible(False)
+                        ax.spines["top"].set_visible(False)
+                        ax.spines["bottom"].set_color(self.plot_axis_color)
+                        ax.spines["left"].set_color(self.plot_axis_color)
+                        ax.margins(x=0)
+                        ax.plot(x, y[i], self.lines[i], linewidth=1)
+                        ax.set_title(parameters[i], fontsize=self.plot_fontsize)
+                        ax.set_xlabel("time (s)", fontsize=self.plot_fontsize)
+                        ax.set_ylabel(ylabel, fontsize=self.plot_fontsize)
+                        if not autoscale:
+                            ax.set_ylim([ylowerlim, yupperlim])
+                        if zeroline:
+                            ax.hlines(0, np.amin(x), np.amax(x), linestyles="dashed")
+                        if fill:
+                            ax.fill_between(x, y[i], color="blue", alpha=0.3)
+
+            if combined:
+                fig = plt.figure(
+                    figsize=(fig_size_x, fig_size_y),
+                    dpi=self.plot_dpi / 3,
+                    facecolor=self.plot_background_color,
+                    tight_layout=True,
+                )
+                plt.tick_params(axis="both", which="both", labelsize=self.plot_fontsize)
+                fig.patch.set_facecolor(self.plot_background_color)
+                fig.set_label("")
+                fig.canvas.header_visible = False
+
+                ax = plt.gca()
+                ax.spines["right"].set_visible(False)
+                ax.spines["top"].set_visible(False)
+                ax.spines["bottom"].set_color(self.plot_axis_color)
+                ax.spines["left"].set_color(self.plot_axis_color)
+                plt.margins(x=0, y=0)
+                if not autoscale:
+                    plt.ylim([ylowerlim, yupperlim])
+                for index, parameter in enumerate(parameters):
+                    # Subplot of figure 1 with id 211 the data (red line r-, first legend = parameter)
+                    plt.plot(x, y[index], self.lines[index], linewidth=1, label=parameter)
+                    if fill:
+                        plt.fill_between(x, y[index], color="blue", alpha=0.3)
+                if zeroline:
+                    plt.hlines(0, np.amin(x), np.amax(x), linestyles="dashed")
+                plt.xlabel("time (s)", fontsize=self.plot_fontsize)
+                plt.ylabel(ylabel, fontsize=self.plot_fontsize)
+                plt.xticks(fontsize=self.plot_fontsize)
+                plt.yticks(fontsize=self.plot_fontsize)
+                # Add a legend
+                plt.legend(
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, 1.22),
+                    ncol=6,
+                    fontsize=self.plot_fontsize,
+                )
+                if fill_between:
+                    plt.fill_between(x, y[0], y[1], color="blue", alpha=0.1)
+
+            plt.show()
+
+    def draw_xy_graph(self, collected_data, property_x, property_y, fig_size_x=2, fig_size_y=2):
+            no_dp = len(collected_data)
+            x = np.zeros(no_dp)
+            y = np.zeros(no_dp)
+
+            for index, t in enumerate(collected_data):
+                x[index] = t[property_x]
+                y[index] = t[property_y]
+
+            # determine number of needed plots
+            if self.dark_mode:
+                plt.style.use("dark_background")
+
+            plt.figure(
+                figsize=(fig_size_x, fig_size_y),
+                dpi=self.plot_dpi / 1.5,
+                facecolor=self.plot_background_color,
+                tight_layout=True,
+            )
+            # Subplot of figure 1 with id 211 the data (red line r-, first legend = parameter)
+            plt.plot(x, y, self.lines[0], linewidth=1)
+            ax = plt.gca()
+            ax.spines["right"].set_visible(False)
+            ax.spines["top"].set_visible(False)
+            ax.spines["bottom"].set_color(self.plot_axis_color)
+            ax.spines["left"].set_color(self.plot_axis_color)
+
+            plt.xlabel(property_x, fontsize=self.plot_fontsize / 3, labelpad=0)
+            plt.ylabel(property_y, fontsize=self.plot_fontsize / 3, rotation=90, labelpad=1)
+            plt.xticks(fontsize=self.plot_fontsize / 3)
+            plt.yticks(fontsize=self.plot_fontsize / 3)
+            plt.show()
 
 #----------------------------------------------------------------------------------------------------------------------------
 # if running from an interactive python environment (e.g. jupyter/vs code) start with the following lines to import the model
