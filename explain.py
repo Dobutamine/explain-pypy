@@ -32,7 +32,7 @@ from abc import ABC, abstractmethod                     # used to create abstrac
 import matplotlib.pyplot as plt                         # pyright: ignore[reportMissingModuleSource] used by the plotter object 
 import numpy as np                                      # pyright: ignore[reportMissingImports] used by the plotter object
 #----------------------------------------------------------------------------------------------------------------------------
-# explain base model class and general models
+# explain base model class and general model building blocks
 class BaseModelClass(ABC):
     # This base model class is the blueprint for all the model objects (classes). It incorporates the properties and methods which all model objects implement
     def __init__(self, model_ref: object, name: str = "") -> None:
@@ -65,85 +65,8 @@ class BaseModelClass(ABC):
         # this method is abstract and must be implemented by subclasses
         pass
 
-class BloodDiffusor(BaseModelClass):
-    '''
-    The BloodDiffusor model handles the diffusion of gasses and solutes between two blood containing models 
-    (e.g. BloodCapacitance and BloodTimeVaryingElastance). The diffusion between the gasses
-    o2 and co2 are partial pressure driven and the diffusion between solutes is concentration driven.
-    '''
-    def __init__(self, model_ref: object, name: str = "") -> None:
-        # initialize the base model class setting all the general properties of the model which all models have in common
-        super().__init__(model_ref, name)
-
-        # -----------------------------------------------
-        # initialize independent properties which will be set when the init_model method is called
-        self.comp_blood1: str = "PLF"                   # name of the first blood containing model
-        self.comp_blood2: str = "PLM"                   # name of the second blood containing model
-        self.dif_o2: float = 0.01                       # diffusion constant for o2 (mmol/mmHg * s)
-        self.dif_co2: float = 0.01                      # diffusion constant for co2 (mmol/mmHg * s)
-        self.dif_solutes: dict = {}                     # diffusion constants for the different solutes (mmol/mmol * s)
-
-        # factors
-        self.dif_o2_factor: float = 1.0                 # factor influencing the diffusion constant for o2
-        self.dif_o2_scaling_factor: float = 1.0         # scaling factor for the diffusion constant for o2
-        self.dif_co2_factor: float = 1.0                # factor influencing the diffusion constant for co2
-        self.dif_co2_scaling_factor: float = 1.0        # scaling factor for the diffusion constant for co2
-        self.dif_solutes_factor: float = 1.0            # factor influencing the diffusion constant for all solutes
-        self.dif_solutes_scaling_factor: float = 1.0    # scaling factor for the diffusion constant for all solutes      
-
-        # -----------------------------------------------
-        # initialize dependent properties
-
-        # -----------------------------------------------
-        # local variables
-        self._calc_blood_composition: object = None             # holds a reference to the calc_blood_composition function of the Blood model
-        self._comp_blood1: object = None                        # holds a reference to the first blood containing model
-        self._comp_blood2: object = None                        # holds a reference to the second blood containing model
-
-    def init_model(self, **args: dict[str, any]) -> None:
-        # set the properties of this model
-        for key, value in args.items():
-            setattr(self, key, value)
-
-        # find the two blood containing models and store a reference
-        self._comp_blood1 = self._model_engine.models[self.comp_blood1]
-        self._comp_blood2 = self._model_engine.models[self.comp_blood2]
-
-        # store a reference to the calc_blood_composition function of the Blood model
-        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
-
-        # flag that the model is initialized
-        self._is_initialized = True
-
-
-    def calc_model(self):
-        # calculate the blood composition of the blood components in this diffusor as we need the partial pressures for the gasses diffusion
-        self._calc_blood_composition(self._comp_blood1)
-        self._calc_blood_composition(self._comp_blood2)
-
-        # incorporate the factors
-        _dif_o2 = self.dif_o2 * self.dif_o2_scaling_factor * self.dif_o2_factor
-        _dif_co2 = self.dif_co2 * self.dif_co2_scaling_factor * self.dif_co2_factor
-
-        # diffuse the gasses where the diffusion is partial pressure driven
-        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t * self.dif_o2_factor
-        # update the concentrations
-        self._comp_blood1.to2 = ((self._comp_blood1.to2 * self._comp_blood1.vol) - do2) / self._comp_blood1.vol
-        self._comp_blood2.to2 = ((self._comp_blood2.to2 * self._comp_blood2.vol) + do2) / self._comp_blood2.vol
-
-        dco2 = (self._comp_blood1.pco2 - self._comp_blood2.pco2) * _dif_co2 * self._t * self.dif_co2_factor
-        # update the concentrations
-        self._comp_blood1.tco2 = ((self._comp_blood1.tco2 * self._comp_blood1.vol) - dco2) / self._comp_blood1.vol
-        self._comp_blood2.tco2 = ((self._comp_blood2.tco2 * self._comp_blood2.vol) + dco2) / self._comp_blood2.vol
-
-        # diffuse the solutes where the diffusion is concentration gradient driven
-        for sol, dif in self.dif_solutes.items():
-            dif = dif * self.dif_solutes_factor * self.dif_solutes_scaling_factor
-            # diffuse the solute which is concentration driven
-            dsol = (self._comp_blood1.solutes[sol] - self._comp_blood2.solutes[sol]) * dif * self._t
-            # update the concentration
-            self._comp_blood1.solutes[sol] = ((self._comp_blood1.solutes[sol] * self._comp_blood1.vol) - dsol) / self._comp_blood1.vol
-            self._comp_blood2.solutes[sol] = ((self._comp_blood2.solutes[sol] * self._comp_blood2.vol) + dsol) / self._comp_blood2.vol
+class Afferent(BaseModelClass):
+    pass
 
 class Capacitance(BaseModelClass):
     def __init__(self, model_ref: object, name: str) -> None:
@@ -282,7 +205,10 @@ class Container(BaseModelClass):
         self.pres_ext = 0.0
         self.act_factor = 0.0
 
-class GasDiffusor(BaseModelClass):
+class Diffusor(BaseModelClass):
+    pass
+
+class Efferent(BaseModelClass):
     pass
 
 class GasExchanger(BaseModelClass):
@@ -1225,6 +1151,86 @@ class BloodCapacitance(BaseModelClass):
         
         # return zero as all volume in dvol is removed from the capactitance
         return 0.0
+
+class BloodDiffusor(BaseModelClass):
+    '''
+    The BloodDiffusor model handles the diffusion of gasses and solutes between two blood containing models 
+    (e.g. BloodCapacitance and BloodTimeVaryingElastance). The diffusion between the gasses
+    o2 and co2 are partial pressure driven and the diffusion between solutes is concentration driven.
+    '''
+    def __init__(self, model_ref: object, name: str = "") -> None:
+        # initialize the base model class setting all the general properties of the model which all models have in common
+        super().__init__(model_ref, name)
+
+        # -----------------------------------------------
+        # initialize independent properties which will be set when the init_model method is called
+        self.comp_blood1: str = "PLF"                   # name of the first blood containing model
+        self.comp_blood2: str = "PLM"                   # name of the second blood containing model
+        self.dif_o2: float = 0.01                       # diffusion constant for o2 (mmol/mmHg * s)
+        self.dif_co2: float = 0.01                      # diffusion constant for co2 (mmol/mmHg * s)
+        self.dif_solutes: dict = {}                     # diffusion constants for the different solutes (mmol/mmol * s)
+
+        # factors
+        self.dif_o2_factor: float = 1.0                 # factor influencing the diffusion constant for o2
+        self.dif_o2_scaling_factor: float = 1.0         # scaling factor for the diffusion constant for o2
+        self.dif_co2_factor: float = 1.0                # factor influencing the diffusion constant for co2
+        self.dif_co2_scaling_factor: float = 1.0        # scaling factor for the diffusion constant for co2
+        self.dif_solutes_factor: float = 1.0            # factor influencing the diffusion constant for all solutes
+        self.dif_solutes_scaling_factor: float = 1.0    # scaling factor for the diffusion constant for all solutes      
+
+        # -----------------------------------------------
+        # initialize dependent properties
+
+        # -----------------------------------------------
+        # local variables
+        self._calc_blood_composition: object = None             # holds a reference to the calc_blood_composition function of the Blood model
+        self._comp_blood1: object = None                        # holds a reference to the first blood containing model
+        self._comp_blood2: object = None                        # holds a reference to the second blood containing model
+
+    def init_model(self, **args: dict[str, any]) -> None:
+        # set the properties of this model
+        for key, value in args.items():
+            setattr(self, key, value)
+
+        # find the two blood containing models and store a reference
+        self._comp_blood1 = self._model_engine.models[self.comp_blood1]
+        self._comp_blood2 = self._model_engine.models[self.comp_blood2]
+
+        # store a reference to the calc_blood_composition function of the Blood model
+        self._calc_blood_composition = self._model_engine.models["Blood"].calc_blood_composition
+
+        # flag that the model is initialized
+        self._is_initialized = True
+
+
+    def calc_model(self):
+        # calculate the blood composition of the blood components in this diffusor as we need the partial pressures for the gasses diffusion
+        self._calc_blood_composition(self._comp_blood1)
+        self._calc_blood_composition(self._comp_blood2)
+
+        # incorporate the factors
+        _dif_o2 = self.dif_o2 * self.dif_o2_scaling_factor * self.dif_o2_factor
+        _dif_co2 = self.dif_co2 * self.dif_co2_scaling_factor * self.dif_co2_factor
+
+        # diffuse the gasses where the diffusion is partial pressure driven
+        do2 = (self._comp_blood1.po2 - self._comp_blood2.po2) * _dif_o2 * self._t * self.dif_o2_factor
+        # update the concentrations
+        self._comp_blood1.to2 = ((self._comp_blood1.to2 * self._comp_blood1.vol) - do2) / self._comp_blood1.vol
+        self._comp_blood2.to2 = ((self._comp_blood2.to2 * self._comp_blood2.vol) + do2) / self._comp_blood2.vol
+
+        dco2 = (self._comp_blood1.pco2 - self._comp_blood2.pco2) * _dif_co2 * self._t * self.dif_co2_factor
+        # update the concentrations
+        self._comp_blood1.tco2 = ((self._comp_blood1.tco2 * self._comp_blood1.vol) - dco2) / self._comp_blood1.vol
+        self._comp_blood2.tco2 = ((self._comp_blood2.tco2 * self._comp_blood2.vol) + dco2) / self._comp_blood2.vol
+
+        # diffuse the solutes where the diffusion is concentration gradient driven
+        for sol, dif in self.dif_solutes.items():
+            dif = dif * self.dif_solutes_factor * self.dif_solutes_scaling_factor
+            # diffuse the solute which is concentration driven
+            dsol = (self._comp_blood1.solutes[sol] - self._comp_blood2.solutes[sol]) * dif * self._t
+            # update the concentration
+            self._comp_blood1.solutes[sol] = ((self._comp_blood1.solutes[sol] * self._comp_blood1.vol) - dsol) / self._comp_blood1.vol
+            self._comp_blood2.solutes[sol] = ((self._comp_blood2.solutes[sol] * self._comp_blood2.vol) + dsol) / self._comp_blood2.vol
 
 class BloodPump(BaseModelClass):
     '''
