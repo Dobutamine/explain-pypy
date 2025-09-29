@@ -133,19 +133,19 @@ class BloodCapacitance(Capacitance):
         self.solutes: dict = {}                         # dictionary holding all solutes
         
         # -> general factors 
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
+        self.ans_activity: float = 1.0                  # general ans activity factor
 
         # -> unstressed volume factors
         self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
+        self.u_vol_factor_ps: float = 1.0               # persistent factor changing the unstressed volume
         self.u_vol_ans_factor: float = 1.0              # factor of the ans model influence on the unstressed volume
 
         # -> elastance factors
         self.el_base_factor: float = 1.0                # factor changing the baseline elastance
+        self.el_base_factor_ps: float = 1.0             # persistent factor changing the baseline elastance
         self.el_base_ans_factor: float = 1.0            # factor of the ans model influence on the baseline elastance
-
-        # -> non-linear elastance factors
-        self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
-        self.el_k_ans_factor: float = 1.0               # factor of the ans model influence on the non-linear part of the elastance
+        self.el_k_factor: float = 1.0                   # factor changing the non-linear elastance
+        self.el_k_factor_ps: float = 1.0                # persistent factor changing the non-linear elastance
 
         # -----------------------------------------------
         # initialize the BloodCapacitance specific dependent properties
@@ -159,30 +159,36 @@ class BloodCapacitance(Capacitance):
         self.be: float = -1.0                           # base excess (mmol/l)
 
     def calc_model(self) -> None:
-        # Incorporate the other factors which modify the independent parameters
-        _el = (
-            self.el_base
+        # Incorporate the factors which modify the independent parameters
+        E = (self.el_base
             + (self.el_base_factor - 1) * self.el_base
-            + (self.el_base_ans_factor - 1) * self.el_base * self.ans_activity_factor
-        )
-        _el_k = (
-            self.el_k
-            + (self.el_k_factor - 1) * self.el_k
-            + (self.el_k_ans_factor - 1) * self.el_k * self.ans_activity_factor
-        )
-        _u_vol = (
-            self.u_vol
+            + (self.el_base_factor_ps - 1) * self.el_base
+            + (self.el_base_ans_factor - 1) * self.el_base * self.ans_activity)
+        
+        UV = (self.u_vol
             + (self.u_vol_factor - 1) * self.u_vol
-            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity_factor
-        )
-    
+            + (self.u_vol_factor_ps - 1) * self.u_vol
+            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity)
+        
+        K2 = (self.el_k
+            + (self.el_k_factor - 1) * self.el_k
+            + (self.el_k_factor_ps - 1) * self.el_k)
+        
+        # Calculate the total external pressure
+        p2_t = self.pres_ext + self.pres_cc + self.pres_mus
+
         # calculate the total pressure by incorporating the external pressures
-        self.pres = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol) + self.pres_ext + self.pres_cc + self.pres_mus
+        self.pres = self.calc_pressure(self.vol, UV, E, K2, p2_t)
 
         # reset the external pressures as they are only valid for one time step
         self.pres_ext = 0.0
         self.pres_cc = 0.0
         self.pres_mus = 0.0
+
+        # reset the non-persistent factors as they are only valid for one time step
+        self.el_base_factor = 1.0
+        self.el_k_factor = 1.0
+        self.u_vol_factor = 1.0
 
     # override the volume_in method of the Capacitance model to incorporate solute and gas transport
     def volume_in(self, dvol: float, comp_from: object) -> None:
@@ -219,19 +225,19 @@ class GasCapacitance(Capacitance):
         self.fixed_composition: float = False           # flag whether the gas composition of this capacitance can change
 
         # -> general factors 
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
+        self.ans_activity: float = 1.0                  # general ans activity factor
 
         # -> unstressed volume factors
         self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
+        self.u_vol_factor_ps: float = 1.0               # persistent factor changing the unstressed volume
         self.u_vol_ans_factor: float = 1.0              # factor of the ans model influence on the unstressed volume
 
         # -> elastance factors
-        self.el_base_factor: float = 1.0                # factor changing the baseline elastance
+        self.el_base_factor: float   = 1.0              # factor changing the baseline elastance
+        self.el_base_factor_ps: float = 1.0             # persistent factor changing the baseline elastance
         self.el_base_ans_factor: float = 1.0            # factor of the ans model influence on the baseline elastance
-
-        # -> non-linear elastance factors
         self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
-        self.el_k_ans_factor: float = 1.0               # factor of the ans model influence on the non-linear part of the elastance
+        self.el_k_factor_ps: float = 1.0                # persistent factor changing the non-linear part of the elastance
 
         # ---------------------------------------------------------------------------------------------------------------
         # initialize GasCapacitance specific dependent properties
@@ -267,29 +273,37 @@ class GasCapacitance(Capacitance):
         self.add_watervapour()
 
         # Incorporate the other factors which modify the independent parameters
-        _el = (
-            self.el_base
+        E = (self.el_base
             + (self.el_base_factor - 1) * self.el_base
-            + (self.el_base_ans_factor - 1) * self.el_base * self.ans_activity_factor
-        )
-        _el_k = (
-            self.el_k
+            + (self.el_base_factor_ps - 1) * self.el_base
+            + (self.el_base_ans_factor - 1) * self.el_base * self.ans_activity)
+        
+        K2 = (self.el_k
             + (self.el_k_factor - 1) * self.el_k
-            + (self.el_k_ans_factor - 1) * self.el_k * self.ans_activity_factor
-        )
-        _u_vol = (
+            + (self.el_k_factor_ps - 1) * self.el_k
+            + (self.el_k_ans_factor - 1) * self.el_k * self.ans_activity)
+        
+        UV = (
             self.u_vol
             + (self.u_vol_factor - 1) * self.u_vol
-            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity_factor
-        )
+            + (self.u_vol_factor_ps - 1) * self.u_vol
+            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity)
+        
+        # Calculate the total external pressure
+        p2_t = self.pres_ext + self.pres_cc + self.pres_mus + self.pres_atm
         
         # calculate the total pressure
-        self.pres = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol) + self.pres_ext + self.pres_cc + self.pres_mus + self.pres_atm
+        self.pres = self.calc_pressure(self.vol, UV, E, K2, p2_t)
 
         # reset the external pressures as they are only valid for one time step
         self.pres_ext = 0.0
         self.pres_cc = 0.0
         self.pres_mus = 0.0
+
+        # reset the non-persistent factors as they are only valid for one time step
+        self.el_base_factor = 1.0
+        self.el_k_factor = 1.0
+        self.u_vol_factor = 1.0
 
         # calculate the new gas composition
         self.calc_gas_composition()
@@ -429,7 +443,7 @@ class BloodPump(BloodCapacitance):
             self._outlet.p1_ext = self.pump_pressure
             self._outlet.p2_ext = 0.0
 #----------------------------------------------------------------------------------------------------------------------------
-# Container model and derived models
+# Container model
 #----------------------------------------------------------------------------------------------------------------------------
 class Container(BaseModelClass):
     '''
@@ -447,6 +461,7 @@ class Container(BaseModelClass):
         self.u_vol: float = 0.0                         # unstressed volume UV of the capacitance in (L)
         self.el_base: float = 0.0                       # baseline elastance E of the capacitance in (mmHg/L)
         self.el_k: float = 0.0                          # non-linear elastance factor K2 of the capacitance (unitless)
+        self.act_factor: float = 1.0                    # activation factor changing the elastance (unitless, 0-1)
         self.pres_ext: float = 0.0                      # external pressure p2(t) (mmHg)
         self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg)
         self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
@@ -455,21 +470,20 @@ class Container(BaseModelClass):
         
         # -> unstressed volume factors
         self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
-        self.u_vol_scaling_factor: float = 1.0          # factor for scaling the unstressed volume
+        self.u_vol_factor_ps: float = 1.0               # persistent factor changing the unstressed volume
 
         # -> elastance factors
         self.el_base_factor: float = 1.0                # factor changing the baseline elastance
-        self.el_base_scaling_factor: float = 1.0        # factor for scaling the baseline elastance
+        self.el_base_factor_ps: float = 1.0             # persistent factor changing the baseline elastance
 
         # -> non-linear elastance factors
         self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
-        self.el_k_scaling_factor: float = 1.0           # factor for scaling the non-linear part of the elastance
+        self.el_k_factor_ps: float = 1.0                # persistent factor changing the non-linear part of the elastance
 
         # -----------------------------------------------
         # initialize dependent properties
         self.vol: float = 0.0                           # volume v(t) (L)
         self.pres: float = 0.0                          # pressure p1(t) (mmHg)
-        self.pres_in: float = 0.0                       # recoil pressure of the elastance (mmHg)
 
         # -----------------------------------------------
         # initialize local properties
@@ -496,40 +510,40 @@ class Container(BaseModelClass):
         for c in self._contained_components:
             self.vol += c.vol
 
-        # incorporate the scaling factor
-        _el_base = self.el_base * self.el_base_scaling_factor
-        _el_k_base = self.el_k * self.el_k_scaling_factor
-        _u_vol_base = self.u_vol * self.u_vol_scaling_factor
+        # Incorporate the factors which modify the independent parameters
+        E = (self.el_base
+            + (self.el_base_factor - 1) * self.el_base
+            + (self.el_base_factor_ps - 1) * self.el_base)
+        
+        UV = (self.u_vol
+            + (self.u_vol_factor - 1) * self.u_vol
+            + (self.u_vol_factor_ps - 1) * self.u_vol)
 
-        # incorporate the other factors
-        _el = (
-            _el_base
-            + (self.el_base_factor - 1) * _el_base
-        )
-        _el_k = (
-            _el_k_base
-            + (self.el_k_factor - 1) * _el_k_base
-        )
-        _u_vol = (
-            _u_vol_base
-            + (self.u_vol_factor - 1) * _u_vol_base
-        )
+        K2 = (self.el_k
+            + (self.el_k_factor - 1) * self.el_k
+            + (self.el_k_factor_ps - 1) * self.el_k)
+        
+        # Calculate the total external pressure
+        p2_t = self.pres_ext + self.pres_cc + self.pres_mus
 
-        # calculate the current pressure of the container
-        self.pres_in = _el_k * math.pow((self.vol - _u_vol),2) + _el * (self.vol - _u_vol)
-
-        # calculate the total pressure
-        self.pres = self.pres_in + self.pres_ext + self.pres_cc + self.pres_mus
+        # calculate the total pressure by incorporating the external pressures
+        self.pres = self.calc_pressure(self.vol, UV, E, K2, p2_t)
 
         # transfer the container pressure to the contained components
         for c in self._contained_components:
             c.pres_ext += self.pres
 
-        # reset the external pressure
+        # reset the external pressure and activation factor as they are only valid for one time step
         self.pres_ext = 0.0
-        self.act_factor = 0.0
+        self.act_factor = 1.0
+
+        # reset the non-persistent factors as they are only valid for one time step
+        self.el_base_factor = 1.0
+        self.el_k_factor = 1.0
+        self.u_vol_factor = 1.0
+        #----------------------------------------------------------------------------------------------------------------------------
 #----------------------------------------------------------------------------------------------------------------------------
-# Resistor model and derived models
+# Resistor model
 #----------------------------------------------------------------------------------------------------------------------------
 class Resistor(BaseModelClass):
     '''
@@ -548,10 +562,17 @@ class Resistor(BaseModelClass):
         self.r_k: float = 0.0                           # non linear resistance factor K1 (unitless)
         self.comp_from: str = ""                        # holds the name of the upstream component
         self.comp_to: str = ""                          # holds the name of the downstream component
+        self.r_factor: float = 1.0                      # non-persistent factor changing the resistance (resets every time step)
+        self.r_factor_ps: float = 1.0                   # persistent factor changing the resistance
+        self.no_back_flow: bool = False                 # flag whether backflow is allowed or not
+        self.no_flow: bool = False                      # flag whether any flow is allowed or not
 
-        # -----------------------------------------------
+        # ---------------------------------------------------------------------------------------------------------------
         # initialize dependent properties
         self.flow: float = 0.0                          # flow f(t) (L/s)
+
+        # -----------------------------------------------------------------------------------------------
+        # initialize local properties
         self._comp_from_ref: object = None              # holds a reference to the upstream component
         self._comp_to_ref: object = None                # holds a reference to the downstream component
 
@@ -564,25 +585,32 @@ class Resistor(BaseModelClass):
         self._comp_to_ref = self._model_engine.models[self.comp_to]
 
     def calc_model(self) -> None:
+        # Incorporate the other factors which modify the independent parameters
+        Rf = (self.r_for + (self.r_factor - 1) * self.r_for + (self.r_factor_ps - 1) * self.r_for)
+        Rb = (self.r_back + (self.r_factor - 1) * self.r_back + (self.r_factor_ps - 1) * self.r_back)
+        Rk = (self.r_k + (self.r_factor - 1) * self.r_k + (self.r_factor_ps - 1) * self.r_k)
+        
         # calculate the flow based on the pressures of the connected capacitances and the resistance values
-        self.flow = self.calc_flow(
-            self._comp_from_ref.pres, 
-            self._comp_to_ref.pres, 
-            self.r_for, 
-            self.r_back, 
-            self.r_k, 
-            self.flow
-        )
+        if (self.no_flow):
+            self.flow = 0.0
+        else:
+            self.flow = self.calc_flow(self._comp_from_ref.pres, self._comp_to_ref.pres, Rf, Rb, Rk, self.flow)
 
         # update the volumes of the connected capacitances based on the calculated flow
         self.update_volumes(self.flow)
-
+    
+        # reset the non-persistent resistance factor as this is only valid for one time step
+        self.r_factor = 1.0
+    
     def calc_flow(self, p1_t: float, p2_t: float, Rf: float, Rb: float, K1: float, f_t: float) -> float:
         # calculate and return the flow based on the pressures and resistance values
         if (p1_t - p2_t) >= 0:
             return ((p1_t - p2_t) - K1 * (f_t ** 2)) / Rf
         else:
-            return ((p1_t - p2_t) + K1 * (f_t ** 2)) / Rb
+            if (self.no_back_flow):
+                return 0.0
+            else:
+                return ((p1_t - p2_t) + K1 * (f_t ** 2)) / Rb
         
     def update_volumes(self, flow: float) -> None:
         if flow >= 0:
@@ -591,20 +619,6 @@ class Resistor(BaseModelClass):
         else:
             self._comp_from_ref.volume_in(-flow * self._t, self._comp_to_ref)
             self._comp_to_ref.volume_out(-flow * self._t)
-
-class Valve(Resistor):
-    '''
-    The Valve model is a specialized Resistor model which represents a heart valve.
-    It extends the Resistor model by adding specific properties and behaviors relevant to heart valves.
-    '''
-
-    # 
-    def calc_flow(self, p1_t: float, p2_t: float, Rf: float, Rb: float, K1: float, f_t: float) -> float:
-        # calculate and return the flow based on the pressures and resistance values
-        if (p1_t - p2_t) >= 0:
-            return ((p1_t - p2_t) - K1 * (f_t ** 2)) / Rf
-        else:
-            return 0.0
 #----------------------------------------------------------------------------------------------------------------------------
 # TimeVaryingElastance model and derived models
 #----------------------------------------------------------------------------------------------------------------------------
@@ -671,23 +685,27 @@ class BloodTimeVaryingElastance(TimeVaryingElastance):
         self.solutes: dict = {}                         # dictionary holding all solutes
 
          # ans influence factors
-        self.ans_activity_factor: float = 1.0           # general ans activity factor
+        self.ans_activity: float = 1.0                  # general ans activity factor
 
         # -> unstressed volume factors
         self.u_vol_factor: float = 1.0                  # factor changing the unstressed volume
+        self.u_vol_factor_ps: float = 1.0               # persistent factor changing the unstressed volume
         self.u_vol_ans_factor: float = 1.0              # factor of the ans model influence on the unstressed volume
 
         # -> elastance factors
         self.el_min_factor: float = 1.0                 # factor changing the baseline elastance
+        self.el_min_factor_ps: float = 1.0              # persistent factor changing the baseline elastance
         self.el_min_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
         self.el_min_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
 
         self.el_max_factor: float = 1.0                 # factor changing the baseline elastance
+        self.el_max_factor_ps: float = 1.0              # persistent factor changing the baseline elastance
         self.el_max_ans_factor: float = 1.0             # factor of the ans model influence on the baseline elastance
         self.el_max_mob_factor: float = 1.0             # factor of the myocardial oxygen balance model influence
 
         # -> non-linear elastance factors
         self.el_k_factor: float = 1.0                   # factor changing the non-linear part of the elastance
+        self.el_k_factor_ps: float = 1.0                # persistent factor changing the non-linear part of the elastance
         self.el_k_ans_factor: float = 1.0               # factor of the ans model influence on the non-linear part of the elastance
 
         # -----------------------------------------------
@@ -703,41 +721,40 @@ class BloodTimeVaryingElastance(TimeVaryingElastance):
 
     def calc_model(self) -> None:
         # Incorporate the other factors which modify the independent parameters
-        _el_min = (
-            self.el_min
+        E_min = (self.el_min
             + (self.el_min_factor - 1) * self.el_min
             + (self.el_min_ans_factor - 1) * self.el_min * self.ans_activity_factor
-            + (self.el_min_mob_factor - 1) * self.el_min
-        )
-        _el_max = (
-            self.el_max
+            + (self.el_min_mob_factor - 1) * self.el_min)
+        
+        e_max = (self.el_max
             + (self.el_max_factor - 1) * self.el_max
             + (self.el_max_ans_factor - 1) * self.el_max * self.ans_activity_factor
-            + (self.el_max_mob_factor - 1) * self.el_max
-        )
+            + (self.el_max_mob_factor - 1) * self.el_max)
 
-        _el_k = (
-            self.el_k
+        K2 = (self.el_k
             + (self.el_k_factor - 1) * self.el_k
-            + (self.el_k_ans_factor - 1) * self.el_k * self.ans_activity_factor
-        )
-        _u_vol = (
-            self.u_vol
-            + (self.u_vol_factor - 1) * self.u_vol
-            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity_factor
-        )
-
-        # calculate the recoil pressure of the time varying elastance using the maximal elastance and minimal elastances
-        p_ms = (self.vol - _u_vol) * _el_max
-        p_ed = _el_k * math.pow((self.vol - _u_vol),2) + _el_min * (self.vol - _u_vol)
+            + (self.el_k_ans_factor - 1) * self.el_k * self.ans_activity_factor)
         
-        # calculate the total pressure
-        self.pres = (p_ms - p_ed) * self.act_factor + p_ed + self.pres_ext + self.pres_cc + self.pres_mus
+        UV = (self.u_vol
+            + (self.u_vol_factor - 1) * self.u_vol
+            + (self.u_vol_ans_factor - 1) * self.u_vol * self.ans_activity_factor)
+
+        # calculate the total external pressure
+        p2_t = self.pres_ext + self.pres_cc + self.pres_mus
+
+        # calculate the total pressure 
+        self.pres = self.calc_pressure(self.vol, UV, E_min, e_max, K2, p2_t, self.act_factor)
         
         # reset the external pressures as they are only valid for one time step
         self.pres_ext = 0.0
         self.pres_cc = 0.0
         self.pres_mus = 0.0
+
+        # reset the non-persistent factors as they are only valid for one time step
+        self.el_min_factor = 1.0
+        self.el_max_factor = 1.0
+        self.el_k_factor = 1.0
+        self.u_vol_factor = 1.0
 
     def volume_in(self, dvol: float, comp_from: object) -> None:
         # add volume to the capacitance
@@ -1707,8 +1724,6 @@ class Heart(BaseModelClass):
                                   
         self.hr_ans_factor: float = 1.0                 # heart rate factor of the autonomic nervous system
         self.hr_mob_factor: float = 1.0                 # heart rate factor of the myocardial oxygen balance model
-        self.hr_temp_factor: float = 1.0                # heart rate factor of the temperature (not implemented yet)
-        self.hr_drug_factor: float = 1.0                # heart rate factor of the drug model (not implemneted yet)
         self.ans_activity_factor: float = 1.0           # factor determining the global activity of the autonomic nervous system model
         
         # -----------------------------------------------
@@ -1766,8 +1781,6 @@ class Heart(BaseModelClass):
             self.heart_rate_ref
             + (self.hr_ans_factor - 1.0) * self.heart_rate_ref * self.ans_activity_factor
             + (self.hr_mob_factor - 1.0) * self.heart_rate_ref
-            + (self.hr_temp_factor - 1.0) * self.heart_rate_ref
-            + (self.hr_drug_factor - 1.0) * self.heart_rate_ref
         )
         # calculate the qtc time depending on the heartrate
         self.cqt_time = self.calc_qtc(self.heart_rate)
