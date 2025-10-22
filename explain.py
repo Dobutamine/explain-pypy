@@ -124,7 +124,7 @@ class BloodCapacitance(Capacitance):
         # initialize the base model class
         super().__init__(model_ref, name)
 
-        # -----------------------------------------------
+        # ------------------------------------------------------------------------------------------------------------------
         # initialize the BloodCapacitance specific independent properties
         self.pres_cc: float = 0.0                       # external pressure from chest compressions (mmHg)
         self.pres_mus: float = 0.0                      # external pressure from outside muscles (mmHg)
