@@ -4553,7 +4553,6 @@ class ExampleCustomModel(BaseModelClass):
     def calc_model(self) -> None:
         pass
 
-
 #----------------------------------------------------------------------------------------------------------------------------
 # helper classes, these classes instantiate, initialize and run the model, collect and plot the data and perform tasks.
 #----------------------------------------------------------------------------------------------------------------------------
